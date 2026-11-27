@@ -76,3 +76,8 @@ export async function saveStatusRuleAction(leaveTypeId: string, body: { probatio
   revalidatePath('/leave/manage');
   return r;
 }
+
+/** The Leave request form as the Super Workspace set it up in Form management (issue #91). */
+export async function leaveFormAction() {
+  return act(() => api<import('@crew/contracts').FormView>('/forms/leave_request'));
+}

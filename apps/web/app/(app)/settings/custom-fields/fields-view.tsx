@@ -1,6 +1,6 @@
 'use client';
-import { checkFieldValue, FIELD_OPTION_LISTS, MASTER_LIST_INFO, CUSTOM_FIELD_ENTITIES, CUSTOM_FIELD_ENTITY_LABEL, CUSTOM_FIELD_TYPE_LABEL, CUSTOM_FIELD_TYPES, type CustomFieldType, OPTION_TYPES } from '@crew/contracts';
-import { Alert, Badge, Button, Card, CardBody, CardHeader, Checkbox, Dialog, EmptyState, Field, Input, Select, Table, TBody, TD, TH, THead, TR, Textarea, cn } from '@crew/ui';
+import { checkFieldValue, FIELD_OPTION_LISTS, MASTER_LIST_INFO, CUSTOM_FIELD_ENTITY_LABEL, CUSTOM_FIELD_TYPE_LABEL, CUSTOM_FIELD_TYPES, type CustomFieldType, OPTION_TYPES } from '@crew/contracts';
+import { Alert, Badge, Button, Card, CardBody, CardHeader, Checkbox, Dialog, EmptyState, Field, Input, Select, Table, TBody, TD, TH, THead, TR } from '@crew/ui';
 import { ArrowDown, ArrowUp, Plus, Trash2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
@@ -11,18 +11,23 @@ type RoleOpt = { key: string; name: string };
 
 /** Where each kind of record shows its custom fields, so HR knows where a new field will appear. */
 export const FIELD_PLACES: Record<string, string> = {
-  employee: 'Each employee’s profile (Employees > open a person > Additional details), and the person’s own My profile page, where they can fill in fields marked for employees.',
+  employee: 'The Add Employee form (Additional details step), each employee’s profile (Employees > open a person > Additional details), and the person’s own My profile page, where they can fill in fields marked for employees.',
   asset: 'Each asset’s page (Assets > open an asset > Additional details).',
   bgv_case: 'Each background verification case (Verification > open a case > Additional details).',
   candidate: 'Each candidate’s page (Recruitment > Candidates > open a candidate > Additional details).',
-  leave_request: 'Each leave request on the Leave page (My requests > Details), for the employee and for HR.',
+  leave_request: 'The Apply for leave form, and each leave request on the Leave page (My requests > Details), for the employee and for HR.',
+  client: 'Each client on Staffing bids.',
 };
 const ACTION_LABEL: Record<string, string> = {
   'custom_field.created': 'Field added', 'custom_field.updated': 'Field changed', 'custom_field.archived': 'Field archived', 'custom_field.restored': 'Field restored',
   'custom_field.deleted': 'Field deleted', 'custom_field.reordered': 'Order changed',
 };
 
-export function FieldsView({ fields, roles, history, entity }: { fields: FieldRow[]; roles: RoleOpt[]; history: FieldHistory[]; entity: string }) {
+/**
+ * The custom fields of one kind of record. Shown inside Settings > Form management (issue #91), where the Super
+ * Workspace adds, changes, shows or hides, requires and removes them; anyone else sees them read-only.
+ */
+export function FieldsView({ fields, roles, history, entity, readOnly = false }: { fields: FieldRow[]; roles: RoleOpt[]; history: FieldHistory[]; entity: string; readOnly?: boolean }) {
   const router = useRouter();
   const [editing, setEditing] = useState<FieldRow | 'new' | null>(null);
   const [flash, setFlash] = useState<{ tone: 'success' | 'danger'; text: string } | null>(null);
@@ -41,43 +46,37 @@ export function FieldsView({ fields, roles, history, entity }: { fields: FieldRo
 
   return (
     <div className="grid gap-6">
-      <div role="tablist" aria-label="Kind of record" className="flex flex-wrap gap-1 border-b border-border">
-        {CUSTOM_FIELD_ENTITIES.map((e) => (
-          <button key={e} role="tab" type="button" aria-selected={entity === e} onClick={() => router.push(`/settings/custom-fields?entity=${e}`)}
-            className={cn('-mb-px border-b-2 px-3 py-2 text-sm', entity === e ? 'border-accent font-medium text-fg' : 'border-transparent text-fg-muted hover:text-fg')}>
-            {CUSTOM_FIELD_ENTITY_LABEL[e]} <span className="text-xs text-fg-subtle">{fields.filter((f) => f.entity === e && !f.archivedAt).length}</span>
-          </button>
-        ))}
-      </div>
       {flash && <Alert tone={flash.tone}>{flash.text}</Alert>}
       <Alert tone="info" title="What custom fields are for" data-testid="field-places">
         Record details SampCrew does not ask for out of the box, such as Blood group, Driving licence number or T-shirt size, without changing the product. Fields on this tab appear on: {FIELD_PLACES[entity]} Choose who can see and change each field by workspace access.
       </Alert>
       <Card>
-        <CardHeader title="Fields" description={`Shown in this order on ${CUSTOM_FIELD_ENTITY_LABEL[entity as keyof typeof CUSTOM_FIELD_ENTITY_LABEL].toLowerCase()} forms.`} action={<Button size="sm" onClick={() => setEditing('new')}><Plus className="size-4" aria-hidden /> Add field</Button>} />
+        <CardHeader title="Custom fields" description={`Fields your company added, shown in this order on ${CUSTOM_FIELD_ENTITY_LABEL[entity as keyof typeof CUSTOM_FIELD_ENTITY_LABEL].toLowerCase()} forms after the built-in ones.`} action={readOnly ? undefined : <Button size="sm" onClick={() => setEditing('new')} data-testid="form-add-field"><Plus className="size-4" aria-hidden /> Add field</Button>} />
         {active.length ? (
           <Table aria-label="Custom fields">
-            <THead><tr><TH>Field</TH><TH>Type</TH><TH>Rules</TH><TH>Who</TH><TH>In use</TH><TH /></tr></THead>
+            <THead><tr><TH>Field</TH><TH>Type</TH><TH>Shown</TH><TH>Required</TH><TH>Who</TH><TH>In use</TH>{!readOnly && <TH />}</tr></THead>
             <TBody>
               {active.map((f, i) => (
                 <TR key={f.id}>
                   <TD className="font-medium">{f.label}<div className="font-mono text-[0.6875rem] font-normal text-fg-subtle">{f.key}{f.section ? ` · ${f.section}` : ''}</div></TD>
                   <TD>{CUSTOM_FIELD_TYPE_LABEL[f.type]}{f.options.length ? <div className="text-xs text-fg-muted">{f.options.filter((o) => !o.archived).map((o) => o.label).join(', ')}</div> : null}</TD>
-                  <TD className="text-xs">{[f.required ? 'Required' : 'Optional', f.enabled ? null : 'Switched off', f.defaultValue !== null && f.defaultValue !== undefined && f.defaultValue !== '' ? `Default: ${String(f.defaultValue)}` : null].filter(Boolean).join(' · ')}</TD>
+                  <TD><input type="checkbox" aria-label={`Show ${f.label}`} data-testid={`custom-show-${f.key}`} checked={f.enabled} disabled={readOnly || pending} onChange={(e) => start(async () => say(await saveFieldAction(f.id, { enabled: e.target.checked, ...(e.target.checked ? {} : { required: false }) })))} /></TD>
+                  <TD><input type="checkbox" aria-label={`Require ${f.label}`} data-testid={`custom-require-${f.key}`} checked={f.required} disabled={readOnly || pending || !f.enabled} onChange={(e) => start(async () => say(await saveFieldAction(f.id, { required: e.target.checked })))} />
+                    {f.defaultValue !== null && f.defaultValue !== undefined && f.defaultValue !== '' && <span className="ml-2 text-xs text-fg-muted">Default: {String(f.defaultValue)}</span>}</TD>
                   <TD className="text-xs text-fg-muted">{f.viewRoles.length ? `Seen by ${names(f.viewRoles)}` : 'Everyone with the record'}{f.editRoles.length ? ` · changed by ${names(f.editRoles)}` : ''}{f.employeeEditable ? ' · employee can fill in' : ''}{f.searchable ? ' · searchable' : ''}{f.importable ? '' : ' · not imported'}{f.config.masterList ? ` · options from ${f.config.masterList.replace(/_/g, ' ')}` : ''}</TD>
                   <TD>{f.valueCount ?? 0}</TD>
-                  <TD className="whitespace-nowrap text-right">
+                  {!readOnly && <TD className="whitespace-nowrap text-right">
                     <Button size="sm" variant="ghost" aria-label={`Move ${f.label} up`} disabled={i === 0 || pending} onClick={() => move(i, -1)}><ArrowUp className="size-3.5" aria-hidden /></Button>
                     <Button size="sm" variant="ghost" aria-label={`Move ${f.label} down`} disabled={i === active.length - 1 || pending} onClick={() => move(i, 1)}><ArrowDown className="size-3.5" aria-hidden /></Button>
                     <Button size="sm" variant="ghost" onClick={() => setEditing(f)}>Edit</Button>
                     <Button data-delete-area="people" data-delete={`custom field ${f.label}`} size="sm" variant="ghost" loading={pending} onClick={() => start(async () => say(await archiveFieldAction(f.id, true)))}>Archive</Button>
                     {!f.valueCount && <Button data-delete-area="people" data-delete={`custom field ${f.label}`} size="sm" variant="ghost" aria-label={`Delete ${f.label}`} onClick={() => start(async () => say(await deleteFieldAction(f.id)))}><Trash2 className="size-3.5" aria-hidden /></Button>}
-                  </TD>
+                  </TD>}
                 </TR>
               ))}
             </TBody>
           </Table>
-        ) : <CardBody><EmptyState title="No custom fields yet" description="Add fields such as Blood group, T-shirt size or Laptop preference." /></CardBody>}
+        ) : <CardBody><EmptyState title="No custom fields yet" description={readOnly ? 'The Super Workspace has not added fields to this form.' : 'Add fields such as Blood group, T-shirt size or Laptop preference.'} /></CardBody>}
       </Card>
 
       {archived.length > 0 && (
@@ -90,7 +89,7 @@ export function FieldsView({ fields, roles, history, entity }: { fields: FieldRo
                   <TD className="font-medium">{f.label} <span className="font-mono text-[0.6875rem] text-fg-subtle">{f.key}</span></TD>
                   <TD>{CUSTOM_FIELD_TYPE_LABEL[f.type]}</TD>
                   <TD>{f.valueCount ?? 0} values kept</TD>
-                  <TD className="text-right"><Button size="sm" variant="ghost" loading={pending} onClick={() => start(async () => say(await archiveFieldAction(f.id, false)))}>Restore</Button></TD>
+                  <TD className="text-right">{!readOnly && <Button size="sm" variant="ghost" loading={pending} onClick={() => start(async () => say(await archiveFieldAction(f.id, false)))}>Restore</Button>}</TD>
                 </TR>
               ))}
             </TBody>
@@ -98,7 +97,7 @@ export function FieldsView({ fields, roles, history, entity }: { fields: FieldRo
         </Card>
       )}
 
-      <Card>
+      {!readOnly && <Card>
         <CardHeader title="Field change log" description="Every change to a field definition, with who made it." />
         <CardBody>
           {history.length ? (
@@ -109,7 +108,7 @@ export function FieldsView({ fields, roles, history, entity }: { fields: FieldRo
             </ol>
           ) : <p className="text-[0.8125rem] text-fg-muted">No changes yet.</p>}
         </CardBody>
-      </Card>
+      </Card>}
       {editing && <FieldDialog field={editing === 'new' ? null : editing} entity={entity} roles={roles} onClose={() => setEditing(null)} onSaved={(m) => { setEditing(null); setFlash({ tone: 'success', text: m }); }} />}
     </div>
   );
@@ -144,7 +143,7 @@ function FieldDialog({ field, entity, roles, onClose, onSaved }: { field: FieldR
         const f = new FormData(e.currentTarget);
         const v = (k: string) => String(f.get(k) ?? '').trim();
         const num = (k: string) => (v(k) === '' ? undefined : Number(v(k)));
-        const config = Object.fromEntries(Object.entries({ min: numeric ? num('min') : undefined, max: numeric ? num('max') : undefined, maxLength: type === 'short_text' || type === 'long_text' ? num('maxLength') : undefined, currency: type === 'currency' && v('currency') ? v('currency').toUpperCase() : undefined, decimals: type === 'decimal' ? num('decimals') : undefined, masterList: hasOptions && masterList ? masterList : undefined }).filter(([, x]) => x !== undefined));
+        const config = Object.fromEntries(Object.entries({ min: numeric ? num('min') : undefined, max: numeric ? num('max') : undefined, maxLength: type === 'short_text' || type === 'long_text' ? num('maxLength') : undefined, currency: type === 'currency' && v('currency') ? v('currency').toUpperCase() : undefined, decimals: type === 'decimal' ? num('decimals') : undefined, masterList: hasOptions && masterList ? masterList : undefined, placeholder: v('placeholder') || undefined }).filter(([, x]) => x !== undefined));
         const rawDefault = v('defaultValue');
         const body: Record<string, unknown> = {
           label: v('label'), type, helpText: v('helpText') || null, required, enabled, section: v('section') || null, viewRoles, editRoles, employeeEditable: entity === 'employee' && employeeEditable, searchable, importable, config,
@@ -179,7 +178,8 @@ function FieldDialog({ field, entity, roles, onClose, onSaved }: { field: FieldR
         <Field label="Field type" error={fe.type}>{(p) => <Select {...p} value={type} onChange={(e) => setType(e.target.value as CustomFieldType)}>{CUSTOM_FIELD_TYPES.map((t) => <option key={t} value={t}>{CUSTOM_FIELD_TYPE_LABEL[t]}</option>)}</Select>}</Field>
         {!field && <Field label="Key" hint="Made from the label when empty. It never changes, so exports keep working." error={fe.key}>{(p) => <Input {...p} name="key" pattern="[a-z][a-z0-9_]{1,40}" placeholder="blood_group" />}</Field>}
         <Field label="Section" hint="Groups fields on the form" error={fe.section}>{(p) => <Input {...p} name="section" maxLength={80} defaultValue={field?.section ?? ''} />}</Field>
-        <Field label="Help text" className="sm:col-span-2" error={fe.helpText}>{(p) => <Input {...p} name="helpText" maxLength={300} defaultValue={field?.helpText ?? ''} />}</Field>
+        <Field label="Help text" error={fe.helpText}>{(p) => <Input {...p} name="helpText" maxLength={300} defaultValue={field?.helpText ?? ''} />}</Field>
+        <Field label="Placeholder" hint="Example text inside the empty field" error={fe['config.placeholder']}>{(p) => <Input {...p} name="placeholder" maxLength={120} defaultValue={field?.config.placeholder ?? ''} />}</Field>
         {hasOptions && (
           <Field label="Options from" hint="A Master data list keeps the options in one place for every field and import" className="sm:col-span-2">{(p) => (
             <Select {...p} value={masterList} onChange={(e) => setMasterList(e.target.value)}>

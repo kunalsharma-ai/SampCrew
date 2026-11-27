@@ -7,7 +7,7 @@ import { load, loadOptional } from '@/lib/api';
 import { can } from '@/lib/nav';
 import { ExportDialogButton } from '../export-dialog';
 import type { Me } from '@/lib/types';
-import { addDays, dayLabel, hm, STATUS_LABEL } from '@/lib/time';
+import { addDays, dayLabel, hm, STATUS_LABEL, todayIn } from '@/lib/time';
 import type { AttendanceDay, Department, Location } from '@/lib/types';
 
 export const metadata: Metadata = { title: 'Team attendance' };
@@ -16,7 +16,7 @@ const time = (iso: string | null, tz = 'UTC') => (iso ? new Intl.DateTimeFormat(
 
 export default async function TeamAttendancePage({ searchParams }: { searchParams: Promise<{ date?: string; status?: string; departmentId?: string; locationId?: string; filter?: string }> }) {
   const sp = await searchParams;
-  const date = /^\d{4}-\d{2}-\d{2}$/.test(sp.date ?? '') ? sp.date! : new Date().toISOString().slice(0, 10);
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(sp.date ?? '') ? sp.date! : todayIn((await load<Me>('/me')).tenant.timezone);
   const qs = new URLSearchParams({ date });
   for (const k of ['status', 'departmentId', 'locationId'] as const) if (sp[k]) qs.set(k, sp[k]!);
   // A view opened from Home (late, left early, working now, not in yet, from home).

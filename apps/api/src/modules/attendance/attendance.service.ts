@@ -616,6 +616,8 @@ export class AttendanceService implements OnModuleInit {
         employeeId: e.id,
         date,
         timeZone: e.tz,
+        // The server's clock: pages tick from this, never from the laptop's own clock (issue #91 point 1).
+        serverTime: new Date().toISOString(),
         shift: plan.shift ? { code: plan.shift.code, name: plan.shift.name, start: plan.shift.start_time.slice(0, 5), end: plan.shift.end_time.slice(0, 5) } : null,
         dayType: plan.dayType,
         holidayName: plan.holidayName,

@@ -2,7 +2,7 @@
 import { revalidatePath } from 'next/cache';
 import { act, api } from '@/lib/api';
 
-const refresh = () => revalidatePath('/settings/custom-fields');
+const refresh = () => { revalidatePath('/settings/forms'); revalidatePath('/settings/custom-fields'); };
 
 export async function saveFieldAction(id: string | null, body: Record<string, unknown>) {
   const r = await act(() => api<{ valuesNotMatchingType?: number }>(id ? `/custom-fields/${id}` : '/custom-fields', { method: id ? 'PATCH' : 'POST', body }), id ? 'Field saved. Existing values are kept.' : 'Field added.');

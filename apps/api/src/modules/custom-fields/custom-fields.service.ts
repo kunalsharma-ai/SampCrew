@@ -22,6 +22,7 @@ import { storeUpload, type UploadedFile } from '../../platform/storage/uploads';
 import { employeeAttrs } from '../employees/employee-attrs';
 import { listEntries } from '../master-data/master-data.service';
 import { candidateScopeFilter } from '../recruitment/recruitment-common';
+import { isSuperWorkspace } from '../communication/identity';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Doc = Record<string, any>;
@@ -164,7 +165,23 @@ export class CustomFieldsService {
   }
 
   async create(input: z.infer<typeof customFieldInput>) {
-    return this.db.tenant((tx) => this.createIn(tx, input));
+    return this.db.tenant(async (tx) => {
+      await this.requireSuper(tx);
+      return this.createIn(tx, input);
+    });
+  }
+
+  /**
+   * Form management (issue #91): the Super Workspace is the one place forms are set up, so only it adds, changes,
+   * hides, orders or removes fields. HR Workspaces fill the fields in. (A data import that adds a column as a new
+   * field goes through createIn, under the import's own permission.)
+   */
+  private async requireSuper(tx: TenantTx) {
+    await this.authz.require('fields:manage', undefined, tx);
+    const actor = requestContext.get()?.actor;
+    if (!actor || actor.kind !== 'user' || !(await isSuperWorkspace(tx, requestContext.tenantActor().membershipId))) {
+      throw Errors.forbidden('Only the Super Workspace sets up forms and their fields (Settings > Form management)');
+    }
   }
 
   /** create() inside a transaction the caller holds (a data import adds a field while it saves the column mapping). */
@@ -194,7 +211,7 @@ export class CustomFieldsService {
 
   async update(id: string, input: z.infer<typeof customFieldUpdate>) {
     return this.db.tenant(async (tx) => {
-      await this.authz.require('fields:manage', undefined, tx);
+      await this.requireSuper(tx);
       const before = await tx.collection('custom_fields').findOne({ id });
       if (!before) throw Errors.notFound('Field');
       await this.ownField(tx, before);
@@ -248,7 +265,7 @@ export class CustomFieldsService {
 
   async archive(id: string, archived: boolean) {
     return this.db.tenant(async (tx) => {
-      await this.authz.require('fields:manage', undefined, tx);
+      await this.requireSuper(tx);
       const f = await tx.collection('custom_fields').findOne({ id });
       if (!f) throw Errors.notFound('Field');
       await this.ownField(tx, f);
@@ -261,7 +278,7 @@ export class CustomFieldsService {
   /** Deletes a field that never held a value. Fields with values must be archived, so no history is lost. */
   async remove(id: string) {
     return this.db.tenant(async (tx) => {
-      await this.authz.require('fields:manage', undefined, tx);
+      await this.requireSuper(tx);
       const f = await tx.collection('custom_fields').findOne({ id });
       if (!f) throw Errors.notFound('Field');
       await this.ownField(tx, f);
@@ -275,7 +292,7 @@ export class CustomFieldsService {
 
   async reorder(input: z.infer<typeof customFieldReorder>) {
     return this.db.tenant(async (tx) => {
-      await this.authz.require('fields:manage', undefined, tx);
+      await this.requireSuper(tx);
       const rows = await tx.collection('custom_fields').find({ entity: input.entity }, { projection: { _id: 1 } });
       const known = new Set(rows.map((r) => r.id as string));
       if (input.ids.some((x) => !known.has(x)) || new Set(input.ids).size !== input.ids.length) throw Errors.badRequest('invalid_order', 'The list must name fields of this form, once each');

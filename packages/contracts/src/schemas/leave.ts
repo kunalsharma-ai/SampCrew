@@ -382,6 +382,8 @@ const requestFields = {
   approvalRoute: z.enum(LEAVE_AUTHORITIES).optional(),
   /** Supporting documents uploaded first with POST /leave/documents. */
   documentIds: z.array(z.uuid()).max(5).default([]),
+  /** Custom leave request fields from Form management (issue #91), by field key, saved with the request. */
+  customFields: z.record(z.string().regex(/^[a-z][a-z0-9_]{1,40}$/), z.unknown()).optional(),
 };
 const datesOk = <T extends z.ZodType<{ startDate: string; endDate: string; startHalf: string; endHalf: string }>>(s: T) =>
   s.refine((v) => v.endDate >= v.startDate, { message: 'The end date is before the start date', path: ['endDate'] })

@@ -81,6 +81,8 @@ interface Props {
   canConfigureShifts: boolean;
   setupPending: boolean;
   employeeForm?: EmployeeFormSettings | null;
+  /** Custom employee fields the Add Employee form asks for (Form management, issue #91). */
+  hireFields?: CustomFieldDefinition[];
   onboardingOptions?: AssignOptions | null;
   canImport?: boolean;
   /** Bulk changes: dated job changes (employees:lifecycle) and custom fields (employees:update). */

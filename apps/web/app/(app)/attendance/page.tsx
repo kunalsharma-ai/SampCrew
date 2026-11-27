@@ -8,7 +8,7 @@ import { ApiError, api, load } from '@/lib/api';
 import { allowed, ModuleOverview } from '@/components/module-overview';
 import { can } from '@/lib/nav';
 import { dateLabel, monthBounds, resolvePeriod } from '@/lib/attendance-period';
-import { hm } from '@/lib/time';
+import { hm, todayIn } from '@/lib/time';
 import type { AttendanceMonth, AttendanceToday, LateMonth, Me } from '@/lib/types';
 import { LateSummary } from './late-summary';
 import { NoticeChoices } from '@/components/work-mode/notice-choices';
@@ -22,7 +22,7 @@ type Search = { month?: string; employeeId?: string; period?: string; from?: str
 
 /** Someone else's month (opened from the register, a team list or an HR Workspace): the API checks they may see it. */
 async function OtherPerson({ me, sp }: { me: Me; sp: Search }) {
-  const month = /^\d{4}-(0[1-9]|1[0-2])$/.test(sp.month ?? '') ? sp.month! : new Date().toISOString().slice(0, 7);
+  const month = /^\d{4}-(0[1-9]|1[0-2])$/.test(sp.month ?? '') ? sp.month! : todayIn(me.tenant.timezone).slice(0, 7);
   const { from, to } = monthBounds(month);
   const data = await load<AttendanceMonth>(`/attendance/days?from=${from}&to=${to}&employeeId=${sp.employeeId}`);
   const late = await api<LateMonth>(`/attendance/late/month?month=${month}&employeeId=${data.employee.id}`).catch(() => null);

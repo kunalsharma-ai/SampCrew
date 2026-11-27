@@ -2,7 +2,8 @@ import { PageHeader } from '@crew/ui';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { load } from '@/lib/api';
-import type { LateMonth } from '@/lib/types';
+import type { LateMonth, Me } from '@/lib/types';
+import { todayIn } from '@/lib/time';
 import { LateMonthView } from './late-view';
 
 export const metadata: Metadata = { title: 'Late coming & penalties' };
@@ -15,7 +16,7 @@ const shift = (month: string, n: number) => {
 
 export default async function LateComingPage({ searchParams }: { searchParams: Promise<{ month?: string }> }) {
   const sp = await searchParams;
-  const month = /^\d{4}-(0[1-9]|1[0-2])$/.test(sp.month ?? '') ? sp.month! : new Date().toISOString().slice(0, 7);
+  const month = /^\d{4}-(0[1-9]|1[0-2])$/.test(sp.month ?? '') ? sp.month! : todayIn((await load<Me>('/me')).tenant.timezone).slice(0, 7);
   const data = await load<LateMonth>(`/attendance/late/month?month=${month}`);
   const label = new Intl.DateTimeFormat('en-GB', { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${month}-01T00:00:00Z`));
   return (

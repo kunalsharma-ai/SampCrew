@@ -187,6 +187,7 @@ async function MoreWidgets({ me, prefs, steps, firstName, welcome }: { me: Me; p
   return (
     <HomeDashboard
       embedded
+      timeZone={me.tenant.timezone}
       firstName={firstName}
       tenantName={me.tenant.name}
       welcome={welcome}

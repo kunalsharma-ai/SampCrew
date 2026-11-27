@@ -173,6 +173,8 @@ export interface AttendanceToday {
   employeeId: string;
   date: string;
   timeZone: string;
+  /** The server's clock when this was read; clocks on the page run from it, not from the device's clock. */
+  serverTime?: string;
   shift: { code: string; name: string; start: string; end: string } | null;
   dayType: string;
   holidayName: string | null;

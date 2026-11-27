@@ -3,9 +3,10 @@ import { Alert, Button, Card, CardBody } from '@crew/ui';
 import { QrCode } from 'lucide-react';
 import Link from 'next/link';
 import { useState, useTransition } from 'react';
+import { clock } from '@/lib/time';
 import { qrPunchAction } from '../actions';
 
-export function ScanPunch({ code }: { code: string }) {
+export function ScanPunch({ code, timeZone }: { code: string; timeZone: string }) {
   const [pending, start] = useTransition();
   const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
   if (!code) return <Alert tone="danger">This link has no code. Scan the QR code on the kiosk screen again.</Alert>;
@@ -18,7 +19,7 @@ export function ScanPunch({ code }: { code: string }) {
             const r = await qrPunchAction(code);
             if (r.ok) {
               const p = r.data!.punch;
-              setResult({ ok: true, text: r.data!.duplicate ? 'Already recorded: this code was used for your punch a moment ago.' : `Punched ${p.direction} at ${new Date(p.capturedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.` });
+              setResult({ ok: true, text: r.data!.duplicate ? 'Already recorded: this code was used for your punch a moment ago.' : `Punched ${p.direction} at ${clock(String(p.capturedAt), timeZone)}.` });
             } else setResult({ ok: false, text: r.message });
           })}>
             <QrCode className="size-4" /> Record my punch

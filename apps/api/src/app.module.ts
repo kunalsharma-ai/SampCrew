@@ -20,6 +20,7 @@ import { DocumentsController } from './modules/documents/documents.controller';
 import { DocumentCenterController } from './modules/document-center/document-center.controller';
 import { OnboardingDocumentsController } from './modules/document-center/onboarding-documents.controller';
 import { EmployeeFormController, EmployeeFormService } from './modules/employees/employee-form';
+import { FormsController, FormsService } from './modules/employees/forms';
 import { OnboardingDocumentsService } from './modules/document-center/onboarding-documents.service';
 import { DocumentCenterService } from './modules/document-center/document-center.service';
 import { DocumentsService } from './modules/documents/documents.service';
@@ -270,6 +271,7 @@ export const CONTROLLERS = [
   DocumentCenterController,
   OnboardingDocumentsController,
   EmployeeFormController,
+  FormsController,
   LeaveController,
   LeavePenaltiesController,
   ApprovalsController,
@@ -432,6 +434,7 @@ export const CONTROLLERS = [
     DocumentCenterService,
     OnboardingDocumentsService,
     EmployeeFormService,
+    FormsService,
     AttendanceDaysService,
     AttendanceAccessService,
     AttendanceOverviewService,

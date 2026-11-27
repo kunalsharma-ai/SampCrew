@@ -16,3 +16,8 @@ export async function saveFieldValuesAction(entity: string, recordId: string, va
 export async function uploadFieldFileAction(entity: string, recordId: string, form: FormData) {
   return act(() => apiForm<{ fileId: string; fileName: string }>(`/custom-fields/values/${entity}/${recordId}/files`, form));
 }
+
+/** A form as the Super Workspace set it up in Form management (issue #91), for the forms that render from it. */
+export async function formViewAction(key: string) {
+  return act(() => api<import('@crew/contracts').FormView>(`/forms/${encodeURIComponent(key)}`));
+}

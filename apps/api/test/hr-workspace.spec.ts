@@ -190,12 +190,14 @@ describe('HR workspace: verification, assets, custom fields, admin and import', 
 
   describe('custom fields', () => {
     it('adds typed fields, checks values, keeps archived values and logs every change', async () => {
-      const blood = await api(app, hr).post('/custom-fields').send({
+      // Form management (issue #91): only the Super Workspace sets up fields; HR fills them in.
+      expect((await api(app, hr).post('/custom-fields').send({ entity: 'employee', label: 'Locker', type: 'short_text' })).status).toBe(403);
+      const blood = await api(app, owner).post('/custom-fields').send({
         entity: 'employee', label: 'Blood group', type: 'dropdown', options: [{ value: 'a_pos', label: 'A+' }, { value: 'o_pos', label: 'O+' }], employeeEditable: true,
       });
       expect(blood.status, JSON.stringify(blood.body)).toBe(201);
       expect(blood.body.key).toBe('blood_group');
-      const salaryBand = await api(app, hr).post('/custom-fields').send({ entity: 'employee', label: 'Band', type: 'number', viewRoles: ['hr_admin'], editRoles: ['hr_admin'] });
+      const salaryBand = await api(app, owner).post('/custom-fields').send({ entity: 'employee', label: 'Band', type: 'number', viewRoles: ['hr_admin'], editRoles: ['hr_admin'] });
       expect(salaryBand.status, JSON.stringify(salaryBand.body)).toBe(201);
 
       const bad = await api(app, hr).put(`/custom-fields/values/employee/${staffEmployee}`).send({ values: { blood_group: 'z_neg', band: 'high' } });
@@ -210,7 +212,8 @@ describe('HR workspace: verification, assets, custom fields, admin and import', 
       expect((await api(app, staffToken).put(`/custom-fields/values/employee/${staffEmployee}`).send({ values: { band: 9 } })).status).toBeGreaterThanOrEqual(400);
 
       // Archiving hides the field from new records but keeps the value already saved.
-      expect((await api(app, hr).post(`/custom-fields/${salaryBand.body.id}/archive`).send({ archived: true })).status).toBe(201);
+      expect((await api(app, hr).post(`/custom-fields/${salaryBand.body.id}/archive`).send({ archived: true })).status).toBe(403);
+      expect((await api(app, owner).post(`/custom-fields/${salaryBand.body.id}/archive`).send({ archived: true })).status).toBe(201);
       const values = await api(app, hr).get(`/custom-fields/values/employee/${staffEmployee}`);
       expect(values.body.find((r: { field: { key: string } }) => r.field.key === 'band')?.value).toBe(4);
       expect(await pool.count('custom_field_values', { tenant_id: t.id, record_id: staffEmployee })).toBe(2);

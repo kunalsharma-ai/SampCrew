@@ -270,17 +270,23 @@ async function run(b) {
     await save(hr, '07a-verification-list');
   }
 
-  // 4. A custom field on employees, filled in on Neha's profile.
-  await hr.goto(BASE + '/settings/custom-fields');
-  await hr.getByRole('button', { name: 'Add field' }).click();
-  const fd = hr.getByRole('dialog');
+  // 4. A custom field on employees: the Super Workspace adds it in Form management (issue #91), HR fills it in on Neha's profile.
+  await owner.goto(BASE + '/settings/forms?form=employee_profile');
+  await owner.getByTestId('form-current').getByText('Employee profile form').waitFor({ timeout: 15000 }).catch((e) => fail(owner, e));
+  await owner.getByRole('button', { name: 'Add field' }).click();
+  const fd = owner.getByRole('dialog');
   const label = `T-shirt size ${stamp}`;
   await fd.getByLabel('Label').fill(label);
   await fd.getByLabel('Field type').selectOption('short_text');
   await fd.getByRole('button', { name: 'Save field' }).click();
+  await owner.getByRole('table', { name: 'Custom fields' }).getByText(label).waitFor({ timeout: 10000 }).catch((e) => fail(owner, e));
+  await save(owner, '07b-custom-fields');
+  // HR sees the form as set, without the controls to change it.
+  await hr.goto(BASE + '/settings/custom-fields');
+  await hr.waitForURL(/\/settings\/forms\?form=employee_profile/, { timeout: 15000 }).catch((e) => fail(hr, e));
   await hr.getByRole('table', { name: 'Custom fields' }).getByText(label).waitFor({ timeout: 10000 }).catch((e) => fail(hr, e));
-  await save(hr, '07b-custom-fields');
-  ok('HR added a custom field for employees');
+  if (await hr.getByRole('button', { name: 'Add field' }).count()) fail(hr, new Error('HR should not be able to add form fields'));
+  ok('The Super Workspace added a custom field for employees in Form management; HR sees it read-only');
 
   await hr.goto(BASE + '/employees?q=Neha');
   await hr.getByRole('link', { name: /Neha/ }).first().click();

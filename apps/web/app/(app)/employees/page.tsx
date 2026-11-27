@@ -89,7 +89,10 @@ export default async function EmployeesPage({ searchParams }: { searchParams: Pr
   const beyondOwn = (perm: string) => !!me.permissions[perm] && me.permissions[perm] !== 'own';
   const canMove = beyondOwn('employees:lifecycle');
   const canFields = beyondOwn('employees:update');
-  const bulkFields = canFields ? ((await loadOptional<CustomFieldDefinition[]>('/custom-fields?entity=employee')) ?? []).filter((f) => f.enabled && !f.archivedAt && BULK_TYPES.includes(f.type)) : [];
+  const employeeFields = canFields || canHire ? ((await loadOptional<CustomFieldDefinition[]>('/custom-fields?entity=employee')) ?? []).filter((f) => f.enabled && !f.archivedAt) : [];
+  const bulkFields = canFields ? employeeFields.filter((f) => BULK_TYPES.includes(f.type)) : [];
+  // Custom employee fields set up in Form management show on Add Employee too (issue #91); files are added on the profile.
+  const hireFields = canHire ? employeeFields.filter((f) => f.type !== 'file') : [];
   const loginsFull = limits?.employee.reached && limits.employee.limit !== null ? workspaceLimitMessage('employee', limits.employee.used, limits.employee.limit) : null;
   // Company-wide admins choose the central group or an HR Workspace; an HR Workspace admin only their own.
   const centralChoice = me.levels.super || me.levels.companyHr;
@@ -142,6 +145,7 @@ export default async function EmployeesPage({ searchParams }: { searchParams: Pr
         availableAssets={canHandOver ? (freeAssets?.items ?? []).map((a) => ({ id: a.id, assetCode: a.assetCode, name: a.name, category: a.category })) : null}
         setupPending={setupPending}
         employeeForm={employeeForm}
+        hireFields={hireFields}
         onboardingOptions={onboardingOptions}
         canImport={can(me, 'imports:run') && me.features.includes('data_import')}
       />

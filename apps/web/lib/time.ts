@@ -36,3 +36,12 @@ export const RISK_FLAG_LABEL: Record<string, string> = {
   clock_unverified: 'Time from the phone clock',
   mock_location: 'Mock location reported',
 };
+
+/** Today's date (YYYY-MM-DD) in a time zone, by the server's clock: pages never take "today" from UTC or a laptop. */
+export function todayIn(timeZone: string | null | undefined, now = Date.now()) {
+  try {
+    return new Intl.DateTimeFormat('en-CA', { timeZone: timeZone || 'UTC', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(now));
+  } catch {
+    return new Date(now).toISOString().slice(0, 10);
+  }
+}

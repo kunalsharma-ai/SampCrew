@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useRef, useState, useTransition } from 'react';
 import { SubNav } from '@/components/sub-nav';
+import { useFormRules } from '@/lib/form-rules';
 import type { ActionResult } from '@/lib/api';
 import { photoUrl } from '@/lib/photo';
 import type { FullProfile, PostalAddressView, ProfileSectionKey } from '@/lib/types';
@@ -348,20 +349,24 @@ function PersonalForm({ value, pending, self, onCancel, onSave }: FormProps<Full
   const [v, setV] = useState(value);
   const [note, setNote] = useState('');
   const set = (patch: Partial<typeof v>) => setV({ ...v, ...patch });
+  // The Employee profile form as the Super Workspace set it up (Form management, issue #91).
+  const form = useFormRules('employee_profile');
+  const missing = form.rules.filter((r) => r.visible && r.required && r.key in v && !String((v as Record<string, unknown>)[r.key] ?? '').trim()).map((r) => r.label);
   return (
     <div className="grid gap-4 px-5 pb-5 md:grid-cols-3">
-      <Field label="First name" required>{(fp) => <Input {...fp} value={v.firstName} maxLength={80} onChange={(e) => set({ firstName: e.target.value })} />}</Field>
+      {missing.length > 0 && <Alert tone="warning" className="md:col-span-full">Fill in: {missing.join(', ')}.</Alert>}
+      <Field label={form.label('firstName', 'First name')} required>{(fp) => <Input {...fp} value={v.firstName} maxLength={80} onChange={(e) => set({ firstName: e.target.value })} />}</Field>
       <Field label="Middle name">{(fp) => <Input {...fp} value={v.middleName ?? ''} maxLength={80} onChange={(e) => set({ middleName: e.target.value || null })} />}</Field>
-      <Field label="Last name">{(fp) => <Input {...fp} value={v.lastName} maxLength={80} onChange={(e) => set({ lastName: e.target.value })} />}</Field>
-      <Field label="Preferred name">{(fp) => <Input {...fp} value={v.preferredName ?? ''} maxLength={80} onChange={(e) => set({ preferredName: e.target.value || null })} />}</Field>
-      <Field label="Date of birth">{(fp) => <DatePicker {...fp} value={v.dateOfBirth ?? ''} max={new Date().toISOString().slice(0, 10)} openTo="1995-01-01" onChange={(x) => set({ dateOfBirth: x || null })} calendarLabel="Choose date of birth" />}</Field>
-      <Field label="Gender">{(fp) => <Select {...fp} value={v.gender ?? ''} onChange={(e) => set({ gender: e.target.value || null })}><option value="">Not given</option><option value="female">Female</option><option value="male">Male</option><option value="non_binary">Non-binary</option><option value="undisclosed">Prefer not to say</option></Select>}</Field>
-      <Field label="Personal phone">{(fp) => <Input {...fp} type="tel" value={v.phone ?? ''} maxLength={40} placeholder="+91 98200 12345" onChange={(e) => set({ phone: e.target.value || null })} />}</Field>
-      <Field label="Personal email">{(fp) => <Input {...fp} type="email" value={v.personalEmail ?? ''} maxLength={254} onChange={(e) => set({ personalEmail: e.target.value || null })} />}</Field>
+      {form.show('lastName') && <Field label={form.label('lastName', 'Last name')} required={form.required('lastName')} hint={form.hint('lastName')}>{(fp) => <Input {...fp} placeholder={form.placeholder('lastName')} value={v.lastName} maxLength={80} onChange={(e) => set({ lastName: e.target.value })} />}</Field>}
+      {form.show('preferredName') && <Field label={form.label('preferredName', 'Preferred name')} required={form.required('preferredName')} hint={form.hint('preferredName')}>{(fp) => <Input {...fp} placeholder={form.placeholder('preferredName')} value={v.preferredName ?? ''} maxLength={80} onChange={(e) => set({ preferredName: e.target.value || null })} />}</Field>}
+      {form.show('dateOfBirth') && <Field label={form.label('dateOfBirth', 'Date of birth')} required={form.required('dateOfBirth')} hint={form.hint('dateOfBirth')}>{(fp) => <DatePicker {...fp} value={v.dateOfBirth ?? ''} max={new Date().toISOString().slice(0, 10)} openTo="1995-01-01" onChange={(x) => set({ dateOfBirth: x || null })} calendarLabel="Choose date of birth" />}</Field>}
+      {form.show('gender') && <Field label={form.label('gender', 'Gender')} required={form.required('gender')} hint={form.hint('gender')}>{(fp) => <Select {...fp} value={v.gender ?? ''} onChange={(e) => set({ gender: e.target.value || null })}><option value="">Not given</option><option value="female">Female</option><option value="male">Male</option><option value="non_binary">Non-binary</option><option value="undisclosed">Prefer not to say</option></Select>}</Field>}
+      {form.show('phone') && <Field label={form.label('phone', 'Personal phone')} required={form.required('phone')} hint={form.hint('phone')}>{(fp) => <Input {...fp} type="tel" value={v.phone ?? ''} maxLength={40} placeholder={form.placeholder('phone', '+91 98200 12345')} onChange={(e) => set({ phone: e.target.value || null })} />}</Field>}
+      {form.show('personalEmail') && <Field label={form.label('personalEmail', 'Personal email')} required={form.required('personalEmail')} hint={form.hint('personalEmail')}>{(fp) => <Input {...fp} type="email" placeholder={form.placeholder('personalEmail')} value={v.personalEmail ?? ''} maxLength={254} onChange={(e) => set({ personalEmail: e.target.value || null })} />}</Field>}
       <Field label="Nationality">{(fp) => <Input {...fp} value={v.nationality ?? ''} maxLength={60} onChange={(e) => set({ nationality: e.target.value || null })} />}</Field>
       <Field label="Marital status">{(fp) => <Select {...fp} value={v.maritalStatus ?? ''} onChange={(e) => set({ maritalStatus: e.target.value || null })}><option value="">Not given</option>{MARITAL_STATUSES.map((m) => <option key={m} value={m}>{label(m)}</option>)}</Select>}</Field>
       <Field label="Blood group">{(fp) => <Select {...fp} value={v.bloodGroup ?? ''} onChange={(e) => set({ bloodGroup: e.target.value || null })}><option value="">Not given</option>{BLOOD_GROUPS.map((b) => <option key={b} value={b}>{b}</option>)}</Select>}</Field>
-      <FormFooter pending={pending} self={self} onCancel={onCancel} note={note} setNote={setNote} onSave={() => onSave(v, note)} />
+      <FormFooter pending={pending} self={self} disabled={missing.length > 0} onCancel={onCancel} note={note} setNote={setNote} onSave={() => onSave(v, note)} />
     </div>
   );
 }
