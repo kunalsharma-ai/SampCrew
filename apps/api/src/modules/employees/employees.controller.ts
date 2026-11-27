@@ -148,7 +148,9 @@ export class EmployeesController {
   @Doc({ summary: 'Hire: create the employee, job record, onboarding checklist and (optionally) a SampCrew invitation', body: createEmployeeInput })
   create(@Body(new ZodPipe(createEmployeeInput)) body: CreateEmployeeInput) {
     const assetIds = body.assetIds ?? [];
-    return this.employees.create(body, assetIds.length ? (tx, id) => this.assets.assignAtHire(tx, id, assetIds, 'Handed over when they were added') : undefined);
+    // Add Employee (issue #91): the custom employee fields the Super Workspace made required are checked even when the
+    // form sent none. Imports and offers create employees without them and fill them in later.
+    return this.employees.create({ ...body, customFields: body.customFields ?? {} }, assetIds.length ? (tx, id) => this.assets.assignAtHire(tx, id, assetIds, 'Handed over when they were added') : undefined);
   }
 
   @Get(':id')

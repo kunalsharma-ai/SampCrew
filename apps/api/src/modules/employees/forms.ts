@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Injectable, Param, Put } from '@nestjs/common';
+import { Body, Controller, forwardRef, Get, Inject, Injectable, Param, Put } from '@nestjs/common';
 import {
   employeeFormSettingsInput, FORM_KEYS, FORMS, formDefinition, formRulesError, formSettingsInput, resolveEmployeeForm, resolveForm,
   type FormKey, type FormSettingsInput, type FormSummary, type FormView, type ResolvedFormField,
@@ -53,7 +53,7 @@ export class FormsService {
   constructor(
     private readonly db: DatabaseService,
     private readonly audit: AuditService,
-    private readonly fields: CustomFieldsService,
+    @Inject(forwardRef(() => CustomFieldsService)) private readonly fields: CustomFieldsService,
     private readonly employeeForm: EmployeeFormService,
   ) {}
 

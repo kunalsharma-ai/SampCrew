@@ -1,7 +1,7 @@
 import { WorkspaceLimitsService } from '../workspace-limits/workspace-limits.service';
 import { CustomFieldsService } from '../custom-fields/custom-fields.service';
 import { checkFormRules } from './forms';
-import { Inject, Injectable } from '@nestjs/common';
+import { forwardRef, Inject, Injectable } from '@nestjs/common';
 import type { z } from 'zod';
 import { ADULT_AGE, ageOn, catalogueDesignation, dateOfBirthError, fieldValueText, isMinorOn, PHOTO_MAX_BYTES, PHOTO_TYPES, phoneError, type SetAccessRequest } from '@crew/contracts';
 import type {
@@ -129,7 +129,7 @@ export class EmployeesService {
     private readonly devices: DevicesService,
     private readonly limits: WorkspaceLimitsService,
     private readonly onboardingDocs: OnboardingDocumentsService,
-    private readonly customFields: CustomFieldsService,
+    @Inject(forwardRef(() => CustomFieldsService)) private readonly customFields: CustomFieldsService,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
   ) {}
 
@@ -767,7 +767,11 @@ export class EmployeesService {
       if (input.onboardingDocuments) await this.onboardingDocs.assignInTx(tx, row.id, input.onboardingDocuments, { atHire: true });
       // Custom employee fields asked for on Add Employee (Form management, issue #91), saved with the hire; the
       // fields the Super Workspace made required must be filled in.
-      if (input.customFields) await this.customFields.save('employee', row.id, input.customFields, { tx, creating: true });
+      if (input.customFields) {
+        // The new record joins the HR Workspace's people only now: read the member's reach again.
+        this.authz.forget();
+        await this.customFields.save('employee', row.id, input.customFields, { tx, creating: true });
+      }
       // Hired straight into a permanent position: the leave rules' days on confirmation are credited now.
       if (!existing && status === 'active' && confirmedOn) await this.leave.creditOnConfirmation(tx, row.id, confirmedOn);
 
