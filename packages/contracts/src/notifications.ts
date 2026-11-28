@@ -28,6 +28,7 @@ export const NOTIFICATION_CATEGORIES = [
   { key: 'verification', label: 'Background verification', description: 'Background check progress and results', icon: 'shield' },
   { key: 'assets', label: 'Assets', description: 'Company assets assigned to or returned by you', icon: 'briefcase' },
   { key: 'recruitment', label: 'Recruitment', description: 'Job requisitions, candidates, interviews and offers', icon: 'briefcase' },
+  { key: 'careers', label: 'Career Enquiry', description: 'Applications from your website, assignments, interviews, follow-ups and sync problems', icon: 'briefcase-business' },
   { key: 'payroll', label: 'Payroll & expenses', description: 'Payslips, payroll runs and expense claims', icon: 'wallet' },
   { key: 'system', label: 'Workspace & security', description: 'Sign-in, billing, integrations and other workspace notices', icon: 'settings' },
 ] as const;
@@ -77,6 +78,7 @@ const PREFIXES: [string, NotificationCategory][] = [
   ['interview.', 'recruitment'],
   ['offer.', 'recruitment'],
   ['bid.', 'recruitment'],
+  ['career.', 'careers'],
   ['payslip.', 'payroll'],
   ['payroll', 'payroll'],
   ['expense_claim.', 'payroll'],
@@ -242,7 +244,7 @@ export function shouldPlaySound(sound: NotificationSoundSettings, priority: Noti
  */
 const ACTION_KINDS = new Set([
   'approval.requested', 'appraisal.assigned', 'appraisal.hr_pending', 'appraisal.manager_submitted', 'appraisal.self_submitted',
-  'asset.assigned', 'bgv.assigned', 'candidate.assigned', 'candidate.follow_up_assigned', 'document.requested', 'document.submitted',
+  'asset.assigned', 'bgv.assigned', 'candidate.assigned', 'candidate.follow_up_assigned', 'career.application_received', 'career.enquiry_received', 'career.assigned_hr', 'career.assigned_recruiter', 'career.follow_up_due', 'career.sync_failed', 'document.requested', 'document.submitted',
   'document.deadline', 'document.overdue', 'goal.assigned', 'help.query_assigned', 'help.query_submitted', 'helpdesk.assigned',
   'helpdesk.case_new', 'interview.scheduled', 'learning.assigned', 'learning.submission', 'onboarding.assigned',
   'profile_update.info_requested', 'review.feedback_requested', 'review.manager_requested', 'review.self_requested',
@@ -284,6 +286,7 @@ export const NOTIFICATION_NAV: Record<NotificationCategory, string[]> = {
   verification: ['/verification'],
   assets: ['/assets/mine', '/assets'],
   recruitment: ['/recruitment', '/recruitment/candidates'],
+  careers: ['/career-enquiry'],
   payroll: ['/payslips', '/payroll', '/expenses'],
   system: ['/settings/security', '/settings/workspace'],
 };

@@ -303,7 +303,7 @@ export class CrmImportService {
     if (emails.length) or.push({ email: { $in: emails } });
     if (codes.length) or.push({ candidate_code: { $in: codes } });
     for (let i = 0; i < phones.length; i += 50) or.push({ phone: { $regex: `(${phones.slice(i, i + 50).map((x) => phonePattern(x)).join('|')})` } });
-    const existing = or.length ? await tx.collection('candidates').find({ $or: or, anonymized_at: null }, { projection: { email: 1, phone: 1, candidate_code: 1, first_name: 1, last_name: 1, crm_hr_workspace_id: 1, crm_shared_hr_workspace_ids: 1 } }) : [];
+    const existing = or.length ? await tx.collection('candidates').find({ $or: or, anonymized_at: null }, { projection: { email: 1, phone: 1, candidate_code: 1, first_name: 1, last_name: 1, crm_hr_workspace_id: 1, crm_shared_hr_workspace_ids: 1, career_only: 1 } }) : [];
     const visible = new Set(existing.length ? await tx.collection('candidates').distinct<string>('id', { $and: [{ id: { $in: existing.map((e) => e.id) } }, this.access.filter(a)] }) : []);
     const byEmail = new Map(existing.filter((e) => e.email).map((e) => [e.email as string, e]));
     const byPhone = new Map(existing.filter((e) => phoneKey(e.phone)).map((e) => [phoneKey(e.phone)!, e]));
@@ -318,7 +318,8 @@ export class CrmImportService {
       const [by, e] = hit as readonly [string, Doc];
       p.status = 'duplicate';
       p.match = { id: e.id, code: e.candidate_code ?? null, name: candidateName(e), by, visible: visible.has(e.id) };
-      if (!p.match.visible) p.errors.push({ column: by === 'email' ? label('email') : by === 'phone' ? label('phone') : label('candidateCode'), message: 'This candidate is already in the company’s database under another HR Workspace' });
+      if (e.career_only === true) p.errors.push({ column: by === 'email' ? label('email') : by === 'phone' ? label('phone') : label('candidateCode'), message: 'This person applied through the company website. Move them in from Career Enquiry instead' });
+      else if (!p.match.visible) p.errors.push({ column: by === 'email' ? label('email') : by === 'phone' ? label('phone') : label('candidateCode'), message: 'This candidate is already in the company’s database under another HR Workspace' });
     }
     return out;
   }

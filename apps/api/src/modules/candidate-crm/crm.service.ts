@@ -413,8 +413,14 @@ export class CrmService {
     const match = new Set((settings.match_fields as string[] | undefined) ?? ['email', 'phone', 'candidate_code']);
     const not = opts.exceptId ? { id: { $ne: opts.exceptId } } : {};
     const found = async (filter: Doc, what: 'email' | 'phone') => {
-      const other = await tx.collection('candidates').findOne({ ...filter, anonymized_at: null, ...not }, { projection: { candidate_code: 1, first_name: 1, last_name: 1, crm_hr_workspace_id: 1, crm_shared_hr_workspace_ids: 1 } });
+      const other = await tx.collection('candidates').findOne({ ...filter, anonymized_at: null, ...not }, { projection: { candidate_code: 1, first_name: 1, last_name: 1, crm_hr_workspace_id: 1, crm_shared_hr_workspace_ids: 1, career_only: 1 } });
       if (!other) return;
+      if (other.career_only === true) {
+        const app = await tx.collection('career_applications').findOne({ candidate_id: other.id }, { sort: { created_at: -1 }, projection: { code: 1 } });
+        throw new AppError(HttpStatus.CONFLICT, 'candidate_in_career_enquiry',
+          `${candidateName(other)} applied through the company website${app?.code ? ` (${app.code as string})` : ''}. Open them in Career Enquiry and choose Move to Candidate CRM.`,
+          { candidateId: other.id, applicationId: app?.id ?? null, applicationCode: app?.code ?? null, name: candidateName(other), field: what });
+      }
       const mine = (await tx.collection('candidates').count({ $and: [{ id: other.id }, this.access.filter(a)] })) > 0;
       if (mine) {
         throw new AppError(HttpStatus.CONFLICT, what === 'email' ? 'candidate_exists' : 'possible_duplicate',

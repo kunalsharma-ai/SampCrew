@@ -366,7 +366,14 @@ export class AuthService {
         const live = new Set(await tx.collection('hr_workspaces').distinct<string>('id', { id: { $in: keys }, status: 'active' }));
         candidateCrm = (await tx.collection('candidate_crm_access').find({ key: { $in: keys }, enabled: true }, { projection: { key: 1 } })).some((r) => r.key === 'central' || live.has(r.key));
       }
-      return { user, tenant, membership, roles, subject, ent, employee, levels, candidateCrm, locationTracking: ((workMode?.location_tracking as string | undefined) ?? 'punch') as 'off' | 'punch' | 'real_time', disabledPermissions: (controls?.disabled_permissions as string[]) ?? [] };
+      // Career Enquiry: the same rule, with its own switch per HR Workspace (Settings > Career Integration).
+      let careerEnquiry = crmGrants.some((g) => g.roleKey === 'super_workspace');
+      if (!careerEnquiry && crmGrants.length) {
+        const keys = [...new Set(crmGrants.flatMap((g) => (g.constraints.hrWorkspaceIds?.length ? g.constraints.hrWorkspaceIds : ['central'])))];
+        const live = new Set(await tx.collection('hr_workspaces').distinct<string>('id', { id: { $in: keys }, status: 'active' }));
+        careerEnquiry = (await tx.collection('career_access').find({ key: { $in: keys }, enabled: true }, { projection: { key: 1 } })).some((r) => r.key === 'central' || live.has(r.key));
+      }
+      return { user, tenant, membership, roles, subject, ent, employee, levels, candidateCrm, careerEnquiry, locationTracking: ((workMode?.location_tracking as string | undefined) ?? 'punch') as 'off' | 'punch' | 'real_time', disabledPermissions: (controls?.disabled_permissions as string[]) ?? [] };
     });
     // Workspace switcher: only this user's own active workspaces.
     const { tenants, located } = await this.db.platform(async (tx) => {
@@ -394,6 +401,7 @@ export class AuthService {
       employee: data.employee ? { id: data.employee.id, photoUpdatedAt: data.employee.photo_updated_at?.toISOString() ?? null } : null,
       levels: data.levels,
       candidateCrm: data.candidateCrm,
+      careerEnquiry: data.careerEnquiry,
       deleteAreas: [...(data.subject.deleteAreas ?? [])].sort(),
     };
   }

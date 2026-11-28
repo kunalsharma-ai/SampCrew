@@ -114,6 +114,8 @@ export interface MeResponse {
   };
   /** Recruitment & ATS > Candidate CRM is open to this person (Super Workspace, or an HR Workspace it is switched on for). */
   candidateCrm?: boolean;
+  /** Whether this person works in Career Enquiry (website applications). */
+  careerEnquiry?: boolean;
   /** Areas this person may delete in (contracts delete-permissions.ts); every delete there also asks for their password. */
   deleteAreas?: string[];
 }

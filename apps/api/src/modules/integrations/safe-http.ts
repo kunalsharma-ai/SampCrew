@@ -97,3 +97,43 @@ export function safeRequest(method: 'GET' | 'POST', url: string, body: string | 
     req.end(body ?? undefined);
   });
 }
+
+export interface SafeDownload { status: number; body: Buffer; contentType: string | null; fileName: string | null; durationMs: number }
+
+/**
+ * Downloads a file (a CV from a website's signed link) with the same protections as safeRequest, keeping the bytes.
+ * Refuses a body larger than `maxBytes` instead of cutting it short, so a partial file is never stored.
+ */
+export function safeDownload(url: string, opts: SafeHttpOptions & { maxBytes: number }): Promise<SafeDownload> {
+  const u = new URL(url);
+  const shape = checkUrlShape(url, opts.allowPrivate);
+  if (shape) return Promise.reject(new UnsafeUrlError(shape));
+  const client = u.protocol === 'https:' ? https : http;
+  const started = Date.now();
+  return new Promise((resolve, reject) => {
+    const req = client.request(u, { method: 'GET', headers: { 'user-agent': 'SampCrew-CareerEnquiry/1.0', accept: '*/*' }, lookup: safeLookup(opts.allowPrivate) as never, timeout: opts.timeoutMs ?? 20_000 }, (res) => {
+      const chunks: Buffer[] = [];
+      let size = 0;
+      res.on('data', (c: Buffer) => {
+        size += c.length;
+        if (size > opts.maxBytes) {
+          req.destroy(new Error(`The file is larger than ${Math.round(opts.maxBytes / 1048576)} MB`));
+          return;
+        }
+        chunks.push(c);
+      });
+      res.on('end', () => {
+        const cd = String(res.headers['content-disposition'] ?? '');
+        const m = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(cd);
+        resolve({
+          status: res.statusCode ?? 0, body: Buffer.concat(chunks), contentType: (res.headers['content-type'] as string | undefined)?.split(';')[0]?.trim() ?? null,
+          fileName: m ? decodeURIComponent(m[1]!) : null, durationMs: Date.now() - started,
+        });
+      });
+      res.on('error', reject);
+    });
+    req.on('timeout', () => req.destroy(new Error(`No response within ${Math.round((opts.timeoutMs ?? 20_000) / 1000)} seconds`)));
+    req.on('error', reject);
+    req.end();
+  });
+}

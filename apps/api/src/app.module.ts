@@ -59,6 +59,14 @@ import { CrmImportService } from './modules/candidate-crm/crm-import.service';
 import { CrmJobsService } from './modules/candidate-crm/crm-jobs.service';
 import { CrmWorkService } from './modules/candidate-crm/crm-work.service';
 import { CrmService } from './modules/candidate-crm/crm.service';
+import { CareerEnquiryController, CareerIntakeController, PlatformCareerController } from './modules/career-enquiry/career.controller';
+import { CareerAccessService } from './modules/career-enquiry/career-access.service';
+import { CareerConsoleService } from './modules/career-enquiry/career-console.service';
+import { CareerCrmService } from './modules/career-enquiry/career-crm.service';
+import { CareerJobsService } from './modules/career-enquiry/career-jobs.service';
+import { CareerSettingsService } from './modules/career-enquiry/career-settings.service';
+import { CareerSyncService } from './modules/career-enquiry/career-sync.service';
+import { CareerService } from './modules/career-enquiry/career.service';
 import { LateComingController, LeavePenaltiesController } from './modules/discipline/discipline.controller';
 import { DisciplineService } from './modules/discipline/discipline.service';
 import { LeaveController } from './modules/leave/leave.controller';
@@ -297,6 +305,9 @@ export const CONTROLLERS = [
   LateComingController,
   RecruitmentController,
   CandidateCrmController,
+  CareerEnquiryController,
+  CareerIntakeController,
+  PlatformCareerController,
   CareersPublicController,
   ResumeFilesController,
   PayrollController,
@@ -452,6 +463,13 @@ export const CONTROLLERS = [
     CrmWorkService,
     CrmImportService,
     CrmJobsService,
+    CareerAccessService,
+    CareerService,
+    CareerSyncService,
+    CareerCrmService,
+    CareerSettingsService,
+    CareerJobsService,
+    CareerConsoleService,
     InterviewsService,
     OffersService,
     CareersService,

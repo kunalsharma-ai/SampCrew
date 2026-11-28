@@ -18,6 +18,9 @@ export function configureApp(app: INestApplication) {
   app.use('/api/v1/scim', readScimJson);
   // Payment webhooks are signed over the exact bytes sent, so keep them before JSON parsing.
   app.use('/api/v1/billing/webhooks', readRawJson);
+  // Career Enquiry intake: a website may send the CV inside the JSON (base64), so allow up to 8 MB there only.
+  app.use('/api/v1/public/career-intake', (req: IncomingMessage & { body?: unknown; _body?: boolean }, res: ServerResponse, next: (err?: unknown) => void) =>
+    /json/i.test(req.headers['content-type'] ?? '') ? readJsonUpTo(8 * 1024 * 1024)(req, res, next) : next());
   app.use(helmet());
   app.enableCors({ origin: config.corsOrigins, credentials: false, allowedHeaders: ['authorization', 'content-type', 'idempotency-key', 'x-request-id', 'x-crew-client'] });
   const httpAdapter = app.getHttpAdapter().getInstance() as { set: (k: string, v: unknown) => void; get: (path: string, h: (req: unknown, res: { json: (b: unknown) => void }) => void) => void };
@@ -109,4 +112,37 @@ function readRawJson(req: IncomingMessage & { body?: unknown; rawBody?: Buffer; 
     next();
   });
   req.on('error', next);
+}
+
+/** A JSON body reader with its own size limit, for one path that needs more than the default. */
+function readJsonUpTo(max: number) {
+  return (req: IncomingMessage & { body?: unknown; _body?: boolean }, res: ServerResponse, next: (err?: unknown) => void) => {
+    const chunks: Buffer[] = [];
+    let size = 0;
+    req.on('data', (c: Buffer) => {
+      size += c.length;
+      if (size > max) {
+        res.statusCode = 413;
+        res.setHeader('content-type', 'application/json');
+        res.end(JSON.stringify({ error: { code: 'payload_too_large', message: `The body is larger than ${Math.round(max / 1048576)} MB` } }));
+        req.destroy();
+        return;
+      }
+      chunks.push(c);
+    });
+    req.on('end', () => {
+      try {
+        const text = Buffer.concat(chunks).toString('utf8');
+        req.body = text ? JSON.parse(text) : {};
+      } catch {
+        res.statusCode = 400;
+        res.setHeader('content-type', 'application/json');
+        res.end(JSON.stringify({ error: { code: 'invalid_json', message: 'The body is not valid JSON' } }));
+        return;
+      }
+      req._body = true;
+      next();
+    });
+    req.on('error', next);
+  };
 }

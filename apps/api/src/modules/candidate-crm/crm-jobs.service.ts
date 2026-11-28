@@ -76,7 +76,7 @@ export class CrmJobsService implements OnApplicationBootstrap, OnModuleDestroy {
         sent += await this.notifications.notify(tx, {
           membershipIds: [f.assigned_membership_id], kind, priority, title: title.replace('{name}', candidateName(c) || 'a candidate'),
           body: [crmLabel(FOLLOW_UP_TYPES, f.type), c.candidate_code, f.reason].filter(Boolean).join(' · '),
-          link: `/recruitment/crm/candidates/${f.candidate_id}?tab=follow-ups`, dedupeKey: `${kind}:${f.id}`, resource: { type: 'candidate', id: f.candidate_id },
+          link: f.career_application_id ? `/career-enquiry/applications/${f.career_application_id}?tab=follow-ups` : `/recruitment/crm/candidates/${f.candidate_id}?tab=follow-ups`, dedupeKey: `${kind}:${f.id}`, resource: { type: 'candidate', id: f.candidate_id },
         });
       };
       // Reminders before the time.

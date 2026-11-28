@@ -67,6 +67,12 @@ export class CrmAccessService {
 
   /** A filter on candidates limiting them to the ones this person may see in the CRM. */
   filter(a: CrmActor): Doc {
+    // Website applicants waiting in Career Enquiry are not in the CRM until someone moves them in.
+    const scoped = this.scopeFilter(a);
+    return Object.keys(scoped).length ? { $and: [{ career_only: { $ne: true } }, scoped] } : { career_only: { $ne: true } };
+  }
+
+  private scopeFilter(a: CrmActor): Doc {
     if (a.level === 'super') return {};
     const ids = a.keys.filter((k) => k !== CRM_CENTRAL);
     const or: Doc[] = [];

@@ -2145,6 +2145,8 @@ export const TABLES: Record<string, TableSpec> = {
     access: "tenant", grants: ["insert", "select", "update"], touch: true,
     columns: {
       assigned_membership_id: {"type": "uuid"},
+      // Set when the follow-up was scheduled from Career Enquiry (reminders link to the application).
+      career_application_id: {"type": "uuid"},
       candidate_id: {"required": true, "type": "uuid"},
       completed_at: {"type": "timestamp"},
       completed_by_membership_id: {"type": "uuid"},
@@ -2366,6 +2368,8 @@ export const TABLES: Record<string, TableSpec> = {
       crm_hr_workspace_id: {"type": "uuid"},
       // Other HR Workspaces Super Workspace shared the record with.
       crm_shared_hr_workspace_ids: {"default": {"json": []}, "required": true, "type": "uuid[]"},
+      // Career Enquiry: a website applicant not yet moved into the Candidate CRM (hidden from the CRM until then).
+      career_only: {"default": false, "required": true, "type": "bool"},
       crm_source: {"type": "string"},
       crm_stage: {"type": "string"},
       crm_stage_entered_at: {"type": "timestamp"},
@@ -2443,6 +2447,279 @@ export const TABLES: Record<string, TableSpec> = {
       "CHECK (((email = lower(email)) AND (length(email) <= 254)))",
       "CHECK (((anonymized_at IS NOT NULL) OR (email IS NOT NULL) OR (phone IS NOT NULL)))",
     ],
+  },
+  career_access: {
+    // Career Enquiry: Super Workspace's switch per HR Workspace (key = its id) or the company-wide HR team
+    // (key = 'central'): on or off, all its applications or only those assigned to the person, and the powers given.
+    access: "tenant", grants: ["insert", "select", "update"], touch: true,
+    columns: {
+      caps: {"default": {"json": []}, "required": true, "type": "string[]"},
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      enabled: {"default": false, "required": true, "type": "bool"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      key: {"required": true, "type": "string"},
+      scope: {"default": "all", "enum": ["all", "assigned"], "required": true, "type": "string"},
+      tenant_id: {"required": true, "type": "uuid"},
+      updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      updated_by_membership_id: {"type": "uuid"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "career_access_pkey", "primary": true},
+      {"cols": [{"col": "tenant_id"}, {"col": "key"}], "name": "career_access_key"},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+    ],
+    indexes: [],
+    checks: [],
+  },
+  career_application_events: {
+    // Career Enquiry history: received, every status change (from, to, who, when, why), assignments, calls,
+    // emails, interviews, notes, CV stored, moved to Candidate CRM, and website syncs. Never rewritten.
+    access: "tenant", grants: ["insert", "select"],
+    columns: {
+      actor_membership_id: {"type": "uuid"},
+      application_id: {"required": true, "type": "uuid"},
+      comment: {"type": "string"},
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      detail: {"default": {"json": {}}, "required": true, "type": "json"},
+      from_stage: {"type": "string"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      kind: {"required": true, "type": "string"},
+      tenant_id: {"required": true, "type": "uuid"},
+      to_stage: {"type": "string"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "career_application_events_pkey", "primary": true},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+    ],
+    indexes: [
+      {"cols": [{"col": "tenant_id"}, {"col": "application_id"}, {"col": "created_at"}], "name": "career_application_events_app"},
+    ],
+    checks: [],
+  },
+  career_applications: {
+    // Career Enquiry: one job application or career enquiry sent from the company's website, linked to the one
+    // candidate record (candidates). `fields` keeps what the website sent, mapped to SampCrew's names; `extra`
+    // keeps other fields the website sent, shown as they came. Nothing is filled in that the candidate did not give.
+    access: "tenant", grants: ["insert", "select", "update"], touch: true,
+    columns: {
+      assigned_hr_membership_id: {"type": "uuid"},
+      assigned_recruiter_membership_id: {"type": "uuid"},
+      candidate_id: {"required": true, "type": "uuid"},
+      code: {"required": true, "type": "string"},
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      cv_file_id: {"type": "uuid"},
+      // none: the website sent no CV; pending: being fetched from the website; stored; failed (retried).
+      cv_state: {"default": "none", "enum": ["none", "pending", "stored", "failed"], "required": true, "type": "string"},
+      department: {"type": "string"},
+      document_file_ids: {"default": {"json": []}, "required": true, "type": "uuid[]"},
+      extra: {"default": {"json": []}, "required": true, "type": "json"},
+      external_id: {"type": "string"},
+      fields: {"default": {"json": {}}, "required": true, "type": "json"},
+      hr_workspace_id: {"type": "uuid"},
+      integration_id: {"type": "uuid"},
+      kind: {"default": "application", "enum": ["application", "enquiry"], "required": true, "type": "string"},
+      last_activity_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      moved_to_crm_at: {"type": "timestamp"},
+      moved_to_crm_by_membership_id: {"type": "uuid"},
+      next_follow_up_at: {"type": "timestamp"},
+      position: {"type": "string"},
+      resubmissions: {"default": 0, "required": true, "type": "int"},
+      source: {"default": "website", "required": true, "type": "string"},
+      stage: {"default": "new_application", "required": true, "type": "string"},
+      stage_entered_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      submitted_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      tenant_id: {"required": true, "type": "uuid"},
+      updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      // Last status sent to the website, and when.
+      website_stage: {"type": "string"},
+      website_synced_at: {"type": "timestamp"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "career_applications_pkey", "primary": true},
+      {"cols": [{"col": "tenant_id"}, {"col": "code"}], "name": "career_applications_code"},
+      {"cols": [{"col": "tenant_id"}, {"col": "integration_id"}, {"col": "external_id"}], "name": "career_applications_external", "where": [{"col": "external_id", "op": "notnull"}]},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+      {"cols": ["tenant_id", "candidate_id"], "onDelete": "cascade", "ref": "candidates", "refCols": ["tenant_id", "id"]},
+    ],
+    indexes: [
+      {"cols": [{"col": "tenant_id"}, {"col": "submitted_at", "desc": true}], "name": "career_applications_recent"},
+      {"cols": [{"col": "tenant_id"}, {"col": "stage"}], "name": "career_applications_stage"},
+      {"cols": [{"col": "tenant_id"}, {"col": "candidate_id"}], "name": "career_applications_candidate"},
+    ],
+    checks: [],
+  },
+  career_integrations: {
+    // Career Enquiry: the company's website connection. The website's API key is kept only as a hash; the webhook
+    // secret SampCrew signs status updates with is encrypted with the field key. Neither is ever sent to a browser
+    // after the moment it is created.
+    access: "tenant", grants: ["insert", "select", "update"], touch: true,
+    columns: {
+      api_key_hash: {"type": "string"},
+      api_key_hint: {"type": "string"},
+      api_key_created_at: {"type": "timestamp"},
+      auto_move_to_crm: {"default": false, "required": true, "type": "bool"},
+      candidate_acknowledgement: {"default": false, "required": true, "type": "bool"},
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      default_hr_membership_id: {"type": "uuid"},
+      default_hr_workspace_id: {"type": "uuid"},
+      default_recruiter_membership_id: {"type": "uuid"},
+      enabled: {"default": true, "required": true, "type": "bool"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      last_error: {"type": "string"},
+      last_error_at: {"type": "timestamp"},
+      // Field names of the last payload received, to help with mapping (names only, never values).
+      last_fields: {"default": {"json": []}, "required": true, "type": "string[]"},
+      last_received_at: {"type": "timestamp"},
+      last_success_at: {"type": "timestamp"},
+      last_test: {"type": "json"},
+      mapping: {"default": {"json": {}}, "required": true, "type": "json"},
+      notify_on_new: {"default": true, "required": true, "type": "bool"},
+      notify_super_workspace: {"default": true, "required": true, "type": "bool"},
+      received_count: {"default": 0, "required": true, "type": "int"},
+      send_status_updates: {"default": true, "required": true, "type": "bool"},
+      status_webhook_url: {"type": "string"},
+      tenant_id: {"required": true, "type": "uuid"},
+      updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      updated_by_membership_id: {"type": "uuid"},
+      webhook_secret_enc: {"type": "string"},
+      website_name: {"required": true, "type": "string"},
+      website_url: {"required": true, "type": "string"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "career_integrations_pkey", "primary": true},
+      {"cols": [{"col": "tenant_id"}], "name": "career_integrations_tenant"},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+    ],
+    indexes: [],
+    checks: [],
+  },
+  career_interviews: {
+    // Career Enquiry interviews: when, how (telephonic, video, in person), with whom, the link or place, and how it
+    // ended. Reminders go to the interviewer and the assigned HR an hour before.
+    access: "tenant", grants: ["insert", "select", "update"], touch: true,
+    columns: {
+      application_id: {"required": true, "type": "uuid"},
+      cancel_reason: {"type": "string"},
+      candidate_id: {"required": true, "type": "uuid"},
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      created_by_membership_id: {"type": "uuid"},
+      duration_minutes: {"default": 45, "required": true, "type": "int"},
+      feedback: {"type": "string"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      interviewer_membership_id: {"type": "uuid"},
+      interviewer_name: {"type": "string"},
+      location: {"type": "string"},
+      meeting_link: {"type": "string"},
+      notes: {"type": "string"},
+      reminded_at: {"type": "timestamp"},
+      reschedule_count: {"default": 0, "required": true, "type": "int"},
+      starts_at: {"required": true, "type": "timestamp"},
+      status: {"default": "scheduled", "enum": ["scheduled", "completed", "cancelled"], "required": true, "type": "string"},
+      tenant_id: {"required": true, "type": "uuid"},
+      type: {"enum": ["telephonic", "video", "in_person"], "required": true, "type": "string"},
+      updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "career_interviews_pkey", "primary": true},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+    ],
+    indexes: [
+      {"cols": [{"col": "tenant_id"}, {"col": "status"}, {"col": "starts_at"}], "name": "career_interviews_upcoming"},
+      {"cols": [{"col": "tenant_id"}, {"col": "application_id"}], "name": "career_interviews_app"},
+    ],
+    checks: [],
+  },
+  career_notes: {
+    // Career Enquiry notes on an application: internal notes, and recruitment comments (carried into the Candidate
+    // CRM as remarks when the candidate moves there).
+    access: "tenant", grants: ["insert", "select", "update"],
+    columns: {
+      application_id: {"required": true, "type": "uuid"},
+      author_membership_id: {"type": "uuid"},
+      body: {"required": true, "type": "string"},
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      crm_note_id: {"type": "uuid"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      kind: {"default": "internal", "enum": ["internal", "comment"], "required": true, "type": "string"},
+      tenant_id: {"required": true, "type": "uuid"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "career_notes_pkey", "primary": true},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+    ],
+    indexes: [
+      {"cols": [{"col": "tenant_id"}, {"col": "application_id"}], "name": "career_notes_app"},
+    ],
+    checks: [],
+  },
+  career_settings: {
+    // Career Enquiry, one per company: the recruitment pipeline (empty: the twelve default stages) and the next
+    // application number (CE-000124).
+    access: "tenant", grants: ["insert", "select", "update"], touch: true,
+    columns: {
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      next_number: {"default": 1, "required": true, "type": "int"},
+      stages: {"default": {"json": []}, "required": true, "type": "json"},
+      tenant_id: {"required": true, "type": "uuid"},
+      updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "career_settings_pkey", "primary": true},
+      {"cols": [{"col": "tenant_id"}], "name": "career_settings_tenant"},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+    ],
+    indexes: [],
+    checks: [],
+  },
+  career_sync_jobs: {
+    // Career Enquiry sync log and queue, in three directions: inbound (an application the website sent, kept so a
+    // failed one can be processed again), cv (fetching a CV or document from the website's signed link) and
+    // outbound (a status update for the website). Failed work is retried on a back-off, then marked failed.
+    access: "tenant", grants: ["insert", "select", "update"], touch: true,
+    columns: {
+      application_id: {"type": "uuid"},
+      attempts: {"default": 0, "required": true, "type": "int"},
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      direction: {"enum": ["inbound", "cv", "outbound"], "required": true, "type": "string"},
+      done_at: {"type": "timestamp"},
+      external_id: {"type": "string"},
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      integration_id: {"type": "uuid"},
+      last_error: {"type": "string"},
+      last_status_code: {"type": "int"},
+      locked_until: {"type": "timestamp"},
+      next_attempt_at: {"type": "timestamp"},
+      payload: {"default": {"json": {}}, "required": true, "type": "json"},
+      status: {"default": "pending", "enum": ["pending", "running", "succeeded", "failed"], "required": true, "type": "string"},
+      tenant_id: {"required": true, "type": "uuid"},
+      updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "career_sync_jobs_pkey", "primary": true},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+    ],
+    indexes: [
+      {"cols": [{"col": "status"}, {"col": "next_attempt_at"}], "name": "career_sync_jobs_due"},
+      {"cols": [{"col": "tenant_id"}, {"col": "created_at", "desc": true}], "name": "career_sync_jobs_recent"},
+    ],
+    checks: [],
   },
   career_sites: {
     access: "tenant", grants: ["delete", "insert", "select", "update"], touch: true,

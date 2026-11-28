@@ -67,6 +67,7 @@ export const FEATURE_PARTS = [
   // Recruitment
   { key: 'recruitment.jobs', feature: 'recruitment', name: 'Jobs', audience: 'hr', web: ['/recruitment'] },
   { key: 'recruitment.candidates', feature: 'recruitment', name: 'Candidates', audience: 'hr', web: ['/recruitment/candidates'] },
+  { key: 'recruitment.careers', feature: 'recruitment', name: 'Career Enquiry', audience: 'hr', web: ['/career-enquiry', '/settings/career-integration'], api: ['career-enquiry'] },
   { key: 'recruitment.crm', feature: 'recruitment', name: 'Candidate CRM', audience: 'hr', web: ['/recruitment/crm'], api: ['recruitment/crm'] },
   { key: 'recruitment.interviews', feature: 'recruitment', name: 'My interviews', audience: 'employee', web: ['/recruitment/interviews'] },
   { key: 'recruitment.settings', feature: 'recruitment', name: 'Recruitment settings', audience: 'admin', web: ['/settings/recruitment'] },
