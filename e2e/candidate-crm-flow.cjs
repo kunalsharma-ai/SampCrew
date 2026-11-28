@@ -87,9 +87,9 @@ async function setCentralAccess(p, on) {
     await setCentralAccess(owner, false);
     const rec = await signIn(b, 'recruiter@demo.crew.local');
     page = rec;
-    const nav = rec.getByRole('navigation');
-    const crmLink = nav.getByRole('link', { name: 'Candidate CRM' });
-    await nav.getByRole('link', { name: 'Candidates', exact: true }).waitFor();
+    // Both sit under Recruitment in the menu (closed until opened), so look for the links themselves.
+    const crmLink = rec.locator('nav[aria-label="Main"] a[href="/recruitment/crm"]');
+    await rec.locator('nav[aria-label="Main"] a[href="/recruitment/candidates"]').first().waitFor({ state: 'attached' });
     expect(await crmLink.count() === 0, 'the recruiter sees Candidate CRM while it is switched off');
     await rec.goto(BASE + '/recruitment/crm');
     await rec.waitForURL(/\/no-access\?reason=crm_not_enabled/);

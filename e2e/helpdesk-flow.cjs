@@ -103,7 +103,7 @@ const alertText = (p, re) => p.getByText(re).first().waitFor();
     // 2. The operator asks a question and is shown the article first.
     neha = current = await signIn(b, 'operator2@demo.crew.local');
     // Ask HR now lives under Communication, as Help requests.
-    await neha.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: /^Communication/ }).click();
+    await neha.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: /^SampCrew Chat/ }).click();
     await neha.waitForURL(/\/communication\/chat/);
     await neha.getByRole('navigation', { name: 'Communication' }).getByRole('link', { name: 'Help requests' }).click();
     await neha.waitForURL(/\/helpdesk$/);
@@ -125,9 +125,9 @@ const alertText = (p, re) => p.getByText(re).first().waitFor();
     current = hr;
     await hr.goto(BASE + '/');
     const hrNav = hr.getByRole('navigation', { name: 'Main' });
-    await hrNav.getByRole('link', { name: /^Communication/ }).waitFor();
+    await hrNav.getByRole('link', { name: /^SampCrew Chat/ }).waitFor();
     if (await hrNav.getByRole('link', { name: /^(Ask HR|HR helpdesk)/ }).count()) throw new Error('HR still sees Ask HR or HR helpdesk in the menu');
-    await hrNav.getByRole('link', { name: /^Communication/ }).locator('[aria-label$="waiting"]').waitFor();
+    await hrNav.getByRole('link', { name: /^SampCrew Chat/ }).locator('[aria-label$="waiting"]').waitFor();
     await hr.getByTestId('helpdesk-awaiting').waitFor();
     await hr.goto(BASE + '/helpdesk');
     await hr.waitForURL(/\/helpdesk\/queue/);

@@ -110,6 +110,18 @@ describe('communication', () => {
       expect((await as('emp').post('/communication/conversations').send({ kind: 'direct', membershipId: people.emp.membershipId })).status).toBe(400);
     });
 
+    it('online status: a member with SampCrew open shows online to others, and offline once the stamp goes stale', async () => {
+      const a = ok(await as('emp').post('/communication/conversations').send({ kind: 'direct', membershipId: people.mgr.membershipId }), 201);
+      await pool.insert('member_presence', { tenant_id: t.id, membership_id: people.mgr.membershipId, seen_at: new Date() });
+      expect(ok(await as('emp').get('/communication/conversations')).items.find((c: any) => c.id === a.id).online).toBe(true);
+      const found = ok(await as('emp').get('/communication/people').query({ q: 'mona' })).items;
+      expect(found.find((p: any) => p.membershipId === people.mgr.membershipId).online).toBe(true);
+      // Search matches designation, department and workspace too, not only the name.
+      expect(ok(await as('emp').get('/communication/people').query({ q: 'engineering' })).items.some((p: any) => p.membershipId === people.mgr.membershipId)).toBe(true);
+      await pool.update('member_presence', { membership_id: people.mgr.membershipId }, { $set: { seen_at: new Date(Date.now() - 5 * 60_000) } });
+      expect(ok(await as('emp').get('/communication/conversations')).items.find((c: any) => c.id === a.id).online).toBe(false);
+    });
+
     it('groups: members only, the owner renames and changes members, muting stops notices', async () => {
       const g = ok(await as('emp').post('/communication/conversations').send({ kind: 'group', title: 'Release crew', membershipIds: [people.mgr.membershipId, people.sub.membershipId] }), 201);
       expect((await as('other').get(`/communication/conversations/${g.id}`)).status).toBe(404);

@@ -10,6 +10,7 @@ import { HelpdeskService } from '../helpdesk/helpdesk.service';
 import { CandidatesService } from '../recruitment/candidates.service';
 import { AiService } from '../ai/ai.service';
 import { InsightsService } from '../insights/insights.service';
+import { RequestsService } from '../requests/requests.service';
 import { PrivacyService } from '../privacy/privacy.service';
 import { loadEntitlements } from '../../platform/entitlements/entitlements.service';
 
@@ -28,6 +29,7 @@ export interface HrJobResult {
   attritionScored: number;
   aiPromptsPurged: number;
   retentionApplied: boolean;
+  requestRemindersSent: number;
 }
 
 /**
@@ -53,6 +55,7 @@ export class HrJobsService implements OnApplicationBootstrap, OnModuleDestroy {
     private readonly ai: AiService,
     private readonly insights: InsightsService,
     private readonly privacy: PrivacyService,
+    private readonly requests: RequestsService,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
   ) {}
 
@@ -128,6 +131,11 @@ export class HrJobsService implements OnApplicationBootstrap, OnModuleDestroy {
     const aiPromptsPurged = await this.db.tenant((tx) => this.ai.purgeExpired(tx), { tenantId });
     // The workspace's retention schedule (leavers, exports, sign-in logs), once a day.
     const retentionApplied = Boolean(await this.privacy.applyRetentionDaily(tenantId));
-    return { ...hr, attendanceDaysComputed, devicesAlerted, locationsPurged: workMode.purged, missingCheckOutReminders: workMode.reminded, candidatesAnonymized, helpdeskCasesClosed, attritionScored, aiPromptsPurged, retentionApplied };
+    // Approvers of pending requests that start soon get one "approval pending" reminder (Request settings).
+    const requestRemindersSent = await this.requests.remindDue(tenantId, asOf).catch((err: Error) => {
+      this.logger.error(`Request reminders failed for tenant ${tenantId}: ${err.message}`);
+      return 0;
+    });
+    return { ...hr, requestRemindersSent, attendanceDaysComputed, devicesAlerted, locationsPurged: workMode.purged, missingCheckOutReminders: workMode.reminded, candidatesAnonymized, helpdeskCasesClosed, attritionScored, aiPromptsPurged, retentionApplied };
   }
 }

@@ -21,7 +21,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const chatsOn = me.features.includes('helpdesk') && Boolean(me.permissions['helpdesk:use']);
   const newsOn = me.features.includes('announcements') && Boolean(me.permissions['announcements:read']);
   // Everything the shell needs is fetched together, so each page waits for one round of requests.
-  const [notifications, prefs, inbox, cookieAppearance, helpdesk, notificationPrefs, taskCounts, chats, news, noticeSummary] = await Promise.all([
+  const [notifications, prefs, inbox, cookieAppearance, helpdesk, notificationPrefs, taskCounts, chats, news, noticeSummary, requestSummary] = await Promise.all([
     loadOptional<Notifications & { items: NotificationView[] }>('/notifications?limit=15'),
     loadOptional<MemberPreferences>('/me/preferences'),
     loadOptional<unknown[]>('/approvals/inbox'),
@@ -32,6 +32,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     chatsOn ? loadOptional<{ unread: number }>('/communication/unread') : Promise.resolve(null),
     newsOn ? loadOptional<{ total: number }>('/announcements/unread') : Promise.resolve(null),
     loadOptional<{ categories: { category: string; unread: number }[]; actionNeeded?: number }>('/notifications/summary'),
+    loadOptional<{ pending: number; changesRequested: number; toDecide: number }>('/requests/summary'),
   ]);
   // Unread notices per category: the menu marks the matching module (Leave, Attendance, Learning ...) with them.
   const byCategory = noticeSummary ? Object.fromEntries(noticeSummary.categories.filter((c) => c.unread > 0).map((c) => [c.category, c.unread])) : null;
@@ -47,6 +48,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // Open HR and manager tasks, plus work others sent me to check.
   const tasks = taskCounts ? taskCounts.hr.open + taskCounts.manager.open + taskCounts.toReview + taskCounts.documentsToVerify : 0;
   if (tasks) counts['/tasks'] = tasks;
+  // Requests waiting for the person's decision (My Approvals), and their own requests sent back for changes (My Requests).
+  if (requestSummary?.toDecide) counts['/requests/approvals'] = requestSummary.toDecide;
+  if (requestSummary?.changesRequested) counts['/requests/mine'] = requestSummary.changesRequested;
   // The level's design is on <html> before the first paint (the shell keeps it in step afterwards).
   const nonce = (await headers()).get('x-nonce') ?? undefined;
   // The sign-in page remembers this level, so the next sign-in on this browser opens with its own welcome.
@@ -57,7 +61,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const nav = visibleNav(me);
   const views = homeViews(me);
   const homeView = (await cookies()).get(HOME_VIEW_COOKIE)?.value;
-  const levelScript = `document.documentElement.dataset.level=${JSON.stringify(designLevelOf(me.levels))};document.documentElement.dataset.view=${JSON.stringify(workView)}`;
+  const levelScript = `document.documentElement.dataset.level=${JSON.stringify(workView === 'myday' ? 'employee' : designLevelOf(me.levels))};document.documentElement.dataset.view=${JSON.stringify(workView)}`;
   return (
     <>
       <script nonce={nonce} dangerouslySetInnerHTML={{ __html: levelScript }} />

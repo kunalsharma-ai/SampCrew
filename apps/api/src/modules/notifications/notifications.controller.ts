@@ -13,6 +13,7 @@ import { Errors } from '../../platform/http/errors';
 import { UuidPipe, ZodPipe } from '../../platform/http/zod';
 import { LiveService } from '../../platform/notify/live.service';
 import { NotificationService, notificationView } from '../../platform/notify/notification.service';
+import { touchPresence } from '../../platform/notify/presence';
 import { Doc } from '../../platform/openapi/openapi';
 import { isSuperWorkspace } from '../communication/identity';
 
@@ -244,7 +245,12 @@ export class NotificationsController {
       });
     });
     send('ready', { at: new Date().toISOString() });
-    const beat = setInterval(() => res.write(`: ping\n\n`), HEARTBEAT_MS);
+    // The open stream is what "online" means in the chat: stamp it now and on every heartbeat.
+    void touchPresence(this.db, scope, actor.membershipId);
+    const beat = setInterval(() => {
+      res.write(`: ping\n\n`);
+      void touchPresence(this.db, scope, actor.membershipId);
+    }, HEARTBEAT_MS);
     const end = setTimeout(() => res.end(), STREAM_MAX_MS);
     const close = () => {
       clearInterval(beat);

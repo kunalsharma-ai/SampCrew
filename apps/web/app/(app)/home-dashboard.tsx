@@ -170,7 +170,7 @@ export function HomeDashboard(props: {
           <div className="flex items-center gap-2">{saved && !editing && <span className="text-xs text-fg-subtle" role="status">{saved}</span>}{!editing && <Button variant="secondary" size="sm" onClick={openThemes}><Palette className="size-3.5" /> Themes</Button>}{customize}</div>
         </div>
         {/* No second set of figures or the SampCrew IQ card here (issue #86): the level's Home above already has the
-            counts, and SampCrew IQ opens from the button in the bottom-right corner. */}
+            counts, and SampCrew IQ opens from the sparkle button in the top bar. */}
         {editing && <p className="mb-3 text-[0.8125rem] text-fg-muted">Drag widgets to reorder them, or use the arrow buttons. Hidden widgets stay here while you edit.</p>}
         {visible.length === 0 && !editing && <p className="rounded-xl border border-dashed border-border px-4 py-3 text-[0.8125rem] text-fg-muted" data-testid="more-for-you-empty">Nothing added. Use Customize to add Workspace at a glance, Recently viewed, Personal notes and more.</p>}
         <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-2">{visible.map((w) => widget(w))}</div>

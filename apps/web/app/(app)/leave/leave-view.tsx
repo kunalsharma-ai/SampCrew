@@ -1,4 +1,5 @@
 'use client';
+import Link from 'next/link';
 import { useCreateParam } from '@/lib/use-create-param';
 import { Alert, Button, Card, CardHeader, Dialog, EmptyState, Field, Input, Select, StatusPill, Table, TBody, TD, TH, THead, TR, Textarea } from '@crew/ui';
 import { CalendarPlus, ChevronDown, ChevronUp, Paperclip, X } from 'lucide-react';
@@ -15,7 +16,10 @@ export function ApplyLeave({ balances }: { balances: LeaveBalance[] }) {
   if (!balances.length) return null;
   return (
     <>
-      <Button onClick={() => setOpen(true)}><CalendarPlus className="size-4" /> Apply for leave</Button>
+      {/* Apply for leave (28 November 2026) is a request with the approvers the person chooses; Quick apply keeps
+          the leave type's own approval route. */}
+      <Link href="/leave/apply" className="inline-flex items-center gap-2 rounded-lg bg-accent px-3.5 py-2 text-sm font-semibold text-accent-fg shadow-card hover:bg-accent-hover" data-testid="apply-leave-link"><CalendarPlus className="size-4" /> Apply for leave</Link>
+      <Button variant="secondary" onClick={() => setOpen(true)}>Quick apply</Button>
       <LeaveDialog balances={balances} open={open} onClose={() => setOpen(false)} date={prefill.date} />
     </>
   );

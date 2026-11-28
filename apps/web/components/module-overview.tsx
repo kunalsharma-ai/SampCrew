@@ -1,6 +1,8 @@
 import type { ModuleOverview as Overview, OverviewModule } from '@crew/contracts';
 import { cn } from '@crew/ui';
-import { loadOptional } from '@/lib/api';
+import { load, loadOptional } from '@/lib/api';
+import { inMyDay } from '@/lib/my-day';
+import type { Me } from '@/lib/types';
 import { type BarAction, KpiRow, OverviewChartView, QuickBar } from './neon';
 
 /**
@@ -9,6 +11,8 @@ import { type BarAction, KpiRow, OverviewChartView, QuickBar } from './neon';
  * answers 403), so self-service pages look exactly as before.
  */
 export async function ModuleOverview({ module, actions = [] }: { module: OverviewModule; actions?: BarAction[] }) {
+  // My Day is the person's own view: no organization numbers, and no admin shortcuts.
+  if (await inMyDay(await load<Me>('/me'))) return null;
   const data = await loadOptional<Overview>(`/dashboard/modules/${module}`);
   if (!data) return actions.length ? <div className="mb-6"><QuickBar actions={actions} /></div> : null;
   const n = data.charts.length;

@@ -53,7 +53,8 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   const view = views.some((v) => v.key === sp.view) ? sp.view! : fallback;
   const steps = myDay ? [] : await setupSteps(me);
   const trendDays = sp.trend === '7' ? 7 : sp.trend === '30' ? 30 : 14;
-  const levelLabel = workspaceLevelLabel(me.levels, { withName: true });
+  // My Day is the person's own Employee Workspace, whatever level they hold.
+  const levelLabel = myDay ? 'Employee Workspace · My Day' : workspaceLevelLabel(me.levels, { withName: true });
   const firstName = me.user.fullName.split(' ')[0] ?? me.user.fullName;
   const renderedAt = Date.now();
 

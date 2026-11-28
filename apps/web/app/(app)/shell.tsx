@@ -20,10 +20,11 @@ import { applyAppearance } from '@/lib/appearance-client';
 import { photoUrl } from '@/lib/photo';
 import { WEB_HELP } from '@/lib/help-content';
 import { ICONS } from '@/lib/icons';
-import { HOME_VIEW_COOKIE, MY_DAY_HREFS, accountLinks, myDayNav, type HomeViewKey, type NavGroup, type NavItem, type QuickAction } from '@/lib/nav';
+import { HOME_VIEW_COOKIE, MY_DAY_HREFS, accountLinks, flatNav, myDayNav, type HomeViewKey, type NavGroup, type NavItem, type QuickAction } from '@/lib/nav';
 import type { Me, Notification } from '@/lib/types';
 import { paletteSearchAction, recordSessionLocationAction, recordVisitAction, saveExperienceAction, resetAppearanceAction, saveAppearanceAction, saveFavouritesAction, syncAppearanceCookieAction } from './experience-actions';
 import { IqPanel } from './iq-panel';
+import { ChatWidget } from '@/components/chat-widget';
 import { FirstLoginTour } from './first-login-tour';
 import { ThemePanel } from './theme-panel';
 import { logoutAction, switchTenantAction } from './shell-actions';
@@ -160,6 +161,7 @@ export function Shell({ me, nav: fullNav, notifications, prefs, cookieAppearance
   const [themesOpen, setThemesOpen] = useState(false);
   const [iqOpen, setIqOpen] = useState(false);
   const hasIq = me.features.includes('crew_iq');
+  const hasChat = me.features.includes('helpdesk') && Boolean(me.permissions['helpdesk:use']);
   // Employee Workspace people change their theme from the account menu (Appearance), so the top bar stays clear.
   const employeeLevel = !me.levels || (!me.levels.super && !me.levels.companyHr && me.levels.hrWorkspaces.length === 0);
   const punchable = Boolean(me.employee) && me.features.includes('attendance_basic') && Boolean(me.permissions['attendance:punch']);
@@ -171,7 +173,7 @@ export function Shell({ me, nav: fullNav, notifications, prefs, cookieAppearance
   const [mobileOpen, setMobileOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const collapsed = appearance.sidebar === 'collapsed';
-  const allItems = useMemo(() => nav.flatMap((g) => g.items), [nav]);
+  const allItems = useMemo(() => flatNav(nav), [nav]);
   const allHrefs = allItems.map((i) => i.href);
   // Unread notices per module (Leave ●1, Attendance ●5 ...) on the first menu tab this person has for the category,
   // and the total on Notifications, kept live by the stream.
@@ -217,7 +219,8 @@ export function Shell({ me, nav: fullNav, notifications, prefs, cookieAppearance
 
   useEffect(() => setMobileOpen(false), [pathname]);
   // Each level has its own design system (colours, shape, motion): see data-level in @crew/ui styles.css.
-  const designLevel = designLevelOf(me.levels);
+  // My Day is the person's Employee Workspace, so it wears the Employee Workspace design too.
+  const designLevel = workView === 'myday' ? 'employee' : designLevelOf(me.levels);
   useEffect(() => {
     document.documentElement.dataset.level = designLevel;
     return () => { delete document.documentElement.dataset.level; };
@@ -306,21 +309,23 @@ export function Shell({ me, nav: fullNav, notifications, prefs, cookieAppearance
             </button>
             <div className="ml-auto flex shrink-0 items-center gap-1">
               {/* The top bar keeps only check-in, notifications and theme (issue #83). Approvals, tasks, leave and help
-                  live in the sidebar, Create in the search palette, the trial date in the account menu and SampCrew IQ
-                  in the bottom-right corner. */}
+                  live in the sidebar, Create in the search palette, the trial date in the account menu. SampCrew IQ is the
+                  sparkle button here; the bottom-right corner is the chat. */}
               {punchable && <HeaderPunch />}
+              {hasIq && (
+                <button type="button" onClick={() => setIqOpen((v) => !v)} aria-expanded={iqOpen} aria-label="SampCrew IQ" data-testid="iq-launcher" title="SampCrew IQ, your AI HR assistant (Ctrl+J)" className="crew-ai-button rounded-md p-2 text-fg-muted hover:bg-bg-subtle hover:text-accent">
+                  <Sparkles className="size-[1.125rem]" aria-hidden />
+                </button>
+              )}
               {notifications && <span data-tour="notifications" className="contents"><NotificationBell /></span>}
               {!employeeLevel && <ThemeMenu />}
               <HeaderUser me={me} />
             </div>
           </header>
-          <main id="main" data-tour="home" className="crew-main mx-auto w-full max-w-[1320px] flex-1 px-4 py-6 sm:px-8 sm:py-8"><div key={pathname} className="crew-page"><FeatureGate me={me} pathname={pathname}>{children}</FeatureGate></div></main>
+          <main id="main" data-tour="home" className={cn('crew-main mx-auto w-full max-w-[1320px] flex-1 px-4 py-6 sm:px-8 sm:py-8', hasChat && 'pb-24 sm:pb-24')}><div key={pathname} className="crew-page"><FeatureGate me={me} pathname={pathname}>{children}</FeatureGate></div></main>
         </div>
-        {hasIq && !iqOpen && (
-          <button type="button" onClick={() => setIqOpen(true)} aria-expanded={iqOpen} data-testid="iq-launcher" className="crew-ai-button fixed bottom-5 right-5 z-40 inline-flex h-11 items-center gap-2 rounded-full border border-border bg-surface px-4 text-[0.8125rem] font-semibold shadow-card hover:border-accent/50 print:hidden" title="SampCrew IQ, your AI HR assistant (Ctrl+J)">
-            <Sparkles className="size-4 text-accent" aria-hidden /><span className="hidden sm:inline">SampCrew IQ</span><span className="sr-only sm:hidden">SampCrew IQ</span>
-          </button>
-        )}
+        {/* The bottom-right corner holds the small SampCrew chat (28 November 2026); SampCrew IQ moved to the top bar. */}
+        {hasChat && !iqOpen && <ChatWidget me={me.membership.id} />}
         {hasIq && <IqPanel open={iqOpen} onClose={() => setIqOpen(false)} />}
         <ThemePanel open={themesOpen} onClose={() => setThemesOpen(false)} appearance={appearance} update={update} />
         {prefs && <FirstLoginTour experience={prefs.experience} canSwitch={views.length > 1} />}
@@ -336,6 +341,7 @@ export function Shell({ me, nav: fullNav, notifications, prefs, cookieAppearance
 // ---------------------------------------------------------------------------------------------------------------
 
 const GROUPS_KEY = 'crew-nav-collapsed';
+const CLUSTERS_KEY = 'crew-nav-open-clusters';
 
 const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-');
 
@@ -351,7 +357,16 @@ function Sidebar({ me, nav, views, counts, unread, rail, pathname, allHrefs, onC
     setClosed(next);
     try { localStorage.setItem(GROUPS_KEY, JSON.stringify(next)); } catch {}
   };
-  const byHref = new Map(nav.flatMap((g) => g.items).map((i) => [i.href, i]));
+  const [openClusters, setOpenClusters] = useState<string[]>([]);
+  useEffect(() => {
+    try { setOpenClusters(JSON.parse(localStorage.getItem(CLUSTERS_KEY) ?? '[]')); } catch {}
+  }, []);
+  const toggleCluster = (label: string) => {
+    const next = openClusters.includes(label) ? openClusters.filter((l) => l !== label) : [...openClusters, label];
+    setOpenClusters(next);
+    try { localStorage.setItem(CLUSTERS_KEY, JSON.stringify(next)); } catch {}
+  };
+  const byHref = new Map(flatNav(nav).map((i) => [i.href, i]));
   const favItems = favourites.map((h) => byHref.get(h)).filter((i): i is NavItem => Boolean(i));
   const groups = nav;
 
@@ -395,6 +410,52 @@ function Sidebar({ me, nav, views, counts, unread, rail, pathname, allHrefs, onC
     );
   };
 
+  /**
+   * Pages merged under one entry (28 November 2026, a shorter menu): the entry opens and closes its pages, and stays
+   * open while one of them is the page shown. Closed pages stay in the page (hidden), so links and tests still find them.
+   */
+  const cluster = (item: NavItem) => {
+    const kids = item.children ?? [];
+    const Icon = ICONS[item.icon] ?? Home;
+    const activeKid = kids.some((k) => isActive(k.href, pathname, allHrefs));
+    const ownActive = Boolean(item.ownPage && pathname === item.href);
+    const open = !rail && (activeKid || openClusters.includes(item.label));
+    const waiting = kids.reduce((n, k) => n + (counts[k.href] ?? 0), 0);
+    const id = `${uid}-cl-${slug(item.label)}`;
+    if (rail) return link({ ...item, children: undefined }, `cl-${item.label}`, false);
+    const row = cn(
+      'crew-nav-link relative flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left text-[0.84rem] transition-colors duration-150',
+      ownActive || (activeKid && !open) ? 'bg-accent-subtle font-medium text-accent' : activeKid ? 'font-medium text-fg' : 'text-fg-muted hover:bg-bg-subtle hover:text-fg',
+    );
+    const chevron = <ChevronDown className={cn('size-3.5 shrink-0 transition-transform duration-150', !open && '-rotate-90')} aria-hidden />;
+    const badge = waiting && !open ? <span className="rounded-full bg-accent px-1.5 text-[0.625rem] font-semibold leading-4 text-accent-fg tabular" aria-label={`${waiting} waiting`}>{waiting > 99 ? '99+' : waiting}</span> : null;
+    return (
+      <li key={`cl-${item.label}`} data-testid={`nav-cluster-${slug(item.label)}`}>
+        {item.ownPage ? (
+          <div className="flex items-center">
+            <Link href={item.href} aria-current={ownActive ? 'page' : undefined} className={cn(row, 'flex-1')}>
+              {ownActive && <span className="crew-nav-bar absolute inset-y-1.5 left-0 w-0.5 rounded-full bg-accent" aria-hidden />}
+              <Icon className="size-4 shrink-0" aria-hidden />
+              <span className="min-w-0 flex-1 truncate">{item.label}</span>
+              {badge}
+            </Link>
+            <button type="button" onClick={() => toggleCluster(item.label)} aria-expanded={open} aria-controls={id} aria-label={`${open ? 'Hide' : 'Show'} the ${item.label.toLowerCase()} pages`} className="rounded-md p-1.5 text-fg-subtle hover:bg-bg-subtle hover:text-fg">{chevron}</button>
+          </div>
+        ) : (
+          <button type="button" onClick={() => toggleCluster(item.label)} aria-expanded={open} aria-controls={id} className={row}>
+            <Icon className="size-4 shrink-0" aria-hidden />
+            <span className="min-w-0 flex-1 truncate">{item.label}</span>
+            {badge}
+            {chevron}
+          </button>
+        )}
+        <ul id={id} hidden={!open} className="crew-nav-children ml-[1.05rem] mt-0.5 flex flex-col gap-0.5 border-l border-border pl-2">
+          {kids.map((k) => link(k, k.href, true))}
+        </ul>
+      </li>
+    );
+  };
+
   return (
     <nav aria-label="Main" className="flex h-full flex-col gap-4 px-3 py-4">
       <div className={cn('flex items-center gap-2 px-1', rail && 'flex-col')}>
@@ -427,7 +488,7 @@ function Sidebar({ me, nav, views, counts, unread, rail, pathname, allHrefs, onC
                   <AutoHelp kind="module" text={g.label} describedBy={`${uid}-${slug(g.label)}`} className="-mr-1 scale-90" />
                 </div>
               ) : <div className="mx-3 mb-1 border-t border-border" aria-hidden />}
-              {open && <ul className="flex flex-col gap-0.5">{g.items.map((i) => link(i, i.href, true))}</ul>}
+              {open && <ul className="flex flex-col gap-0.5">{g.items.map((i) => (i.children ? cluster(i) : link(i, i.href, true)))}</ul>}
             </div>
           );
         })}
@@ -763,7 +824,7 @@ function CommandPalette({ open, onClose, nav, me, quick, workflows }: { open: bo
     for (const a of [...quick, ...workflows]) if (match(a.label, a.keywords)) out.push({ id: `a-${a.key}`, section: 'Actions', label: a.label, icon: ICONS[a.icon] ?? ArrowRight, run: () => go(a.href) });
     for (const h of hits) out.push({ id: `h-${h.kind}-${h.id}`, section: h.kind === 'employee' ? 'People' : 'Candidates', label: h.title, detail: h.detail, icon: h.kind === 'employee' ? Contact : UserSearch, run: () => go(h.href) });
     if (!term) for (const r of recents.slice(0, 5)) out.push({ id: `r-${r.href}`, section: 'Recently viewed', label: r.label, icon: History, run: () => go(r.href) });
-    for (const g of nav) for (const i of g.items) if (match(i.label, g.label)) out.push({ id: `p-${i.href}`, section: 'Pages', label: i.label, detail: g.label, icon: ICONS[i.icon] ?? Home, run: () => go(i.href) });
+    for (const g of nav) for (const i of flatNav([g])) if (match(i.label, g.label)) out.push({ id: `p-${i.href}`, section: 'Pages', label: i.label, detail: g.label, icon: ICONS[i.icon] ?? Home, run: () => go(i.href) });
     const themeCmds: PaletteItem[] = [
       { id: 't-dark', section: 'Appearance', label: 'Switch to dark mode', icon: Moon, run: () => { void update({ mode: 'dark' }); onClose(); } },
       { id: 't-light', section: 'Appearance', label: 'Switch to light mode', icon: Sun, run: () => { void update({ mode: 'light' }); onClose(); } },

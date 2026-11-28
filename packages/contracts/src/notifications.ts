@@ -37,6 +37,8 @@ export const NOTIFICATION_CATEGORY_KEYS = NOTIFICATION_CATEGORIES.map((c) => c.k
 /** Kind prefixes and the category they belong to. The longest matching prefix wins. */
 const PREFIXES: [string, NotificationCategory][] = [
   ['approval.', 'approvals'],
+  // Requests (28 November 2026): submitted, decided, changes asked, comments, reminders.
+  ['request.', 'approvals'],
   ['leave.', 'leave'],
   ['leave_', 'leave'],
   ['same_day_leave', 'leave'],

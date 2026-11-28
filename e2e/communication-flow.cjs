@@ -59,7 +59,7 @@ const pdf = (name) => ({ name, mimeType: 'application/pdf', buffer: Buffer.from(
     const neha = current = await signIn(b, 'operator2@demo.crew.local');
     const nehaNav = neha.getByRole('navigation', { name: 'Main' });
     if (await nehaNav.getByRole('link', { name: /^Ask HR/ }).count()) throw new Error('Ask HR is still in the menu');
-    await nehaNav.getByRole('link', { name: /^Communication/ }).click();
+    await nehaNav.getByRole('link', { name: /^SampCrew Chat/ }).click();
     await neha.waitForURL(/\/communication\/chat/);
     await neha.getByRole('button', { name: 'New conversation' }).first().click();
     let d = dialogOf(neha);
@@ -81,8 +81,8 @@ const pdf = (name) => ({ name, mimeType: 'application/pdf', buffer: Buffer.from(
     const hr = current = await signIn(b, 'hr.admin@demo.crew.local');
     const hrNav = hr.getByRole('navigation', { name: 'Main' });
     if (await hrNav.getByRole('link', { name: /^(Ask HR|HR helpdesk)/ }).count()) throw new Error('HR still sees Ask HR or HR helpdesk in the menu');
-    await hrNav.getByRole('link', { name: /^Communication/ }).locator('[aria-label$="waiting"]').waitFor();
-    await hrNav.getByRole('link', { name: /^Communication/ }).click();
+    await hrNav.getByRole('link', { name: /^SampCrew Chat/ }).locator('[aria-label$="waiting"]').waitFor();
+    await hrNav.getByRole('link', { name: /^SampCrew Chat/ }).click();
     await hr.waitForURL(/\/communication$/);
     await hr.getByTestId('comm-stats').waitFor();
     const waiting = hr.getByTestId('waiting-for-hr');

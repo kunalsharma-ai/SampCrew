@@ -69,6 +69,7 @@
     "e2e:ats": "node e2e/ats-flow.cjs",
     "e2e:candidate-crm": "node e2e/candidate-crm-flow.cjs",
     "e2e:iq": "node e2e/iq-flow.cjs",
+    "e2e:requests": "node e2e/requests-flow.cjs",
     "e2e:hardening": "node e2e/hardening-flow.cjs",
     "e2e:delete-permissions": "node e2e/delete-permissions-flow.cjs",
     "e2e:access": "node e2e/access-flow.cjs",

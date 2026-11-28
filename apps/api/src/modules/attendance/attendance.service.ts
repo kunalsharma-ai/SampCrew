@@ -952,6 +952,26 @@ export class AttendanceService implements OnModuleInit {
     await this.audit.record(tx, { action: 'attendance_correction.approved', resourceType: 'attendance_correction', resourceId: c.id, metadata: { workDate: c.work_date, punches: c.punches.length } });
   }
 
+  /**
+   * An approved attendance regularization request (Requests): the check-in and check-out it gave are added as
+   * correction punches (the original record stays) and the days are worked out again.
+   */
+  async applyRegularization(tx: TenantTx, r: { id: string; employeeId: string; workDate: string; checkIn: string | null; checkOut: string | null; requestedBy: string; reason: string }) {
+    const e = await this.days.employee(tx, r.employeeId);
+    if (!e) return;
+    if (await isLocked(tx, e.id, r.workDate)) throw Errors.conflict('period_locked', 'This date is locked for payroll. Unlock the period first, then approve.');
+    const punches = [...(r.checkIn ? [{ time: r.checkIn, direction: 'in' as const }] : []), ...(r.checkOut ? [{ time: r.checkOut, direction: 'out' as const }] : [])];
+    for (const [i, p] of punches.entries()) {
+      await tx.collection('attendance_events').insert({
+        employee_id: e.id, source: 'correction', source_event_id: `request:${r.id}:${i}`,
+        captured_at: new Date(fromLocal(r.workDate, hhmm(p.time), e.tz)), direction: p.direction,
+        recorded_by_membership_id: r.requestedBy, note: `Approved regularization request: ${r.reason}`.slice(0, 500),
+      });
+    }
+    await this.days.recompute(tx, e.id, addDays(r.workDate, -1), addDays(r.workDate, 1) > localToday(e.tz) ? r.workDate : addDays(r.workDate, 1));
+    await this.audit.record(tx, { action: 'attendance.regularized', resourceType: 'staff_request', resourceId: r.id, metadata: { workDate: r.workDate, punches: punches.length } });
+  }
+
   async listCorrections(q: { scope: 'mine' | 'visible'; status?: string }) {
     return this.db.tenant(async (tx) => {
       const and: Record<string, unknown>[] = [];
@@ -1196,6 +1216,8 @@ export class AttendanceService implements OnModuleInit {
 /** People with approved work from home covering a date. */
 async function remoteOn(tx: TenantTx, employeeIds: string[], date: string): Promise<Set<string>> {
   const types = await tx.collection('leave_types').distinct<string>('id', { kind: 'wfh' });
-  if (!types.length) return new Set();
-  return new Set(await tx.collection('leave_requests').distinct<string>('employee_id', { employee_id: { $in: employeeIds }, status: 'approved', leave_type_id: { $in: types }, start_date: { $lte: date }, end_date: { $gte: date } }));
+  // Approved work from home and on-duty requests from the Requests section count too.
+  const asked = await tx.collection('staff_requests').distinct<string>('employee_id', { employee_id: { $in: employeeIds }, kind: { $in: ['wfh', 'on_duty'] }, status: 'approved', start_date: { $lte: date }, end_date: { $gte: date } });
+  if (!types.length) return new Set(asked);
+  return new Set([...asked, ...(await tx.collection('leave_requests').distinct<string>('employee_id', { employee_id: { $in: employeeIds }, status: 'approved', leave_type_id: { $in: types }, start_date: { $lte: date }, end_date: { $gte: date } }))]);
 }

@@ -3,6 +3,8 @@ import type { AudienceInput, ChatMessageView, CommFile, ConversationView, EmailS
 export interface Person {
   membershipId: string; name: string; department: string | null; designation: string | null;
   level: 'super' | 'hr' | 'employee'; levelLabel: string; workspace: string | null; employeeCode: string | null; email: string | null;
+  /** Has SampCrew open now. */
+  online?: boolean;
 }
 export interface ConversationList { items: ConversationView[]; unread: number; isHr: boolean }
 export interface ConversationDetail { conversation: ConversationView & { asHr: boolean }; messages: ChatMessageView[]; hasOlder: boolean }

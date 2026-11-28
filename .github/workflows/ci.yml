@@ -130,6 +130,14 @@ jobs:
           npx --yes wait-on@8.0.3 -t 60000 http-get://localhost:4000/api/v1/health/ready http-get://localhost:3000/login
           pnpm e2e:workspace
           pnpm e2e:mobile-workspace
+      - name: Requests, leave application, menu, My Day and corner chat end-to-end flow
+        # On a fresh demo workspace: the flow raises and decides requests, books leave and starts chats.
+        run: |
+          pkill -f "dist/main.js" || true
+          pnpm db:reset
+          node apps/api/dist/main.js > api.log 2>&1 &
+          npx --yes wait-on@8.0.3 -t 60000 http-get://localhost:4000/api/v1/health/ready http-get://localhost:3000/login
+          pnpm e2e:requests
       - name: Role-based Home and notification center end-to-end flow
         # On a fresh demo workspace: the flow punches the operator in and out, assigns a course and adds an HR Workspace.
         run: |

@@ -62,6 +62,8 @@ import { CrmService } from './modules/candidate-crm/crm.service';
 import { LateComingController, LeavePenaltiesController } from './modules/discipline/discipline.controller';
 import { DisciplineService } from './modules/discipline/discipline.service';
 import { LeaveController } from './modules/leave/leave.controller';
+import { RequestsController } from './modules/requests/requests.controller';
+import { RequestsService } from './modules/requests/requests.service';
 import { LeaveService } from './modules/leave/leave.service';
 import { MembersController } from './modules/members/members.controller';
 import { MembersService } from './modules/members/members.service';
@@ -273,6 +275,7 @@ export const CONTROLLERS = [
   EmployeeFormController,
   FormsController,
   LeaveController,
+  RequestsController,
   LeavePenaltiesController,
   ApprovalsController,
   NotificationsController,
@@ -415,6 +418,7 @@ export const CONTROLLERS = [
     SetupService,
     SignaturesService,
     LeaveService,
+    RequestsService,
     EmployeesService,
     AssetsService,
     BgvService,

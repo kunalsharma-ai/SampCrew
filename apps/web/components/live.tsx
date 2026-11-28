@@ -33,6 +33,10 @@ interface Live {
   on: (type: string, fn: Handler) => () => void;
 }
 
+/** Set by the chat in the corner while it is shown: chat messages then pop up there, not as a second notice. */
+let chatWidgetOn = false;
+export function setChatWidgetOn(on: boolean) { chatWidgetOn = on; }
+
 const LiveContext = createContext<Live | null>(null);
 
 export function useLive(): Live {
@@ -205,7 +209,9 @@ export function LiveProvider({ initial, byCategory: initialByCategory, actionNee
         if (!silent && p && shouldPlaySound(p.sound, d.notification.priority, d.notification.category, p)) {
           void claimNotice(d.notification.id, d.folded).then((mine) => mine && playNotificationSound(d.notification.priority, p.sound.volume, { queueIfLocked: true }));
         }
-        if (!quiet && (!p || p.toasts)) {
+        // A chat message shows on the chat button in the corner instead (its own notice), not twice.
+        const chatOwned = chatWidgetOn && d.notification.link?.startsWith('/communication/chat');
+        if (!quiet && !chatOwned && (!p || p.toasts)) {
           setToasts((cur) => [{ id: `${d.notification.id}:${Date.now()}`, n: d.notification }, ...cur.filter((x) => x.n.id !== d.notification.id)].slice(0, 3));
         }
         if (!quiet) desktopNotice(p, d.notification, openRef.current);
@@ -303,7 +309,7 @@ function Toasts({ toasts, dismiss, open }: { toasts: Toast[]; dismiss: (id: stri
     return () => timers.forEach(clearTimeout);
   }, [toasts, dismiss]);
   return (
-    <div aria-live="polite" className="pointer-events-none fixed bottom-4 right-4 z-[60] flex w-[min(22rem,calc(100vw-2rem))] flex-col gap-2" data-testid="notification-toasts">
+    <div aria-live="polite" className="pointer-events-none fixed right-4 top-16 z-[60] flex w-[min(22rem,calc(100vw-2rem))] flex-col gap-2" data-testid="notification-toasts">
       {toasts.map((t) => (
         <div key={t.id} role="status" className="pointer-events-auto flex overflow-hidden rounded-xl border border-border bg-surface-raised shadow-lg motion-safe:animate-slide-up">
           <span aria-hidden className={cn('w-1 shrink-0', PRIORITY_BAR[t.n.priority])} />

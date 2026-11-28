@@ -146,7 +146,9 @@ export class DisciplineService implements OnModuleInit {
   private async onDayComputed(tx: TenantTx, e: EmployeeCtx, day: ComputedDay) {
     const p = await this.policyIn(tx);
     if (!p.late.enabled) return;
-    const late = day.result.flags.includes('late') && day.result.lateMinutes >= p.late.minLateMinutes;
+    // An approved late-coming request (Requests section) for the day excuses the late arrival.
+    const excused = day.result.flags.includes('late') && (await tx.collection('staff_requests').exists({ employee_id: e.id, kind: 'late_coming', status: 'approved', start_date: { $lte: day.workDate }, end_date: { $gte: day.workDate } }));
+    const late = !excused && day.result.flags.includes('late') && day.result.lateMinutes >= p.late.minLateMinutes;
     const reminders = tx.collection('late_reminders');
     const live = await reminders.findOne({ employee_id: e.id, work_date: day.workDate, status: 'sent' });
     if (!late) {

@@ -350,7 +350,7 @@ export function LeaveCard({ home, balances }: { home: EmployeeHome; balances: Le
   const shown = (balances ?? []).filter((b) => b.kind !== 'wfh').slice(0, 4);
   return (
     <Card data-testid="leave-card">
-      <CardHeader title="Leave" href="/leave" linkAs={Link} description="Balance, requests waiting and leave coming up." action={<Link href="/leave?create=leave" className="inline-flex h-8 items-center rounded-md bg-accent px-3 text-xs font-semibold text-accent-fg hover:opacity-90" data-testid="apply-leave">Apply leave</Link>} />
+      <CardHeader title="Leave" href="/leave" linkAs={Link} description="Balance, requests waiting and leave coming up." action={<Link href="/leave/apply" className="inline-flex h-8 items-center rounded-md bg-accent px-3 text-xs font-semibold text-accent-fg hover:opacity-90" data-testid="apply-leave">Apply leave</Link>} />
       <div className="grid grid-cols-1 gap-4 px-5 pb-5">
         {shown.length > 0 ? (
           <ul className="grid grid-cols-1 gap-2">

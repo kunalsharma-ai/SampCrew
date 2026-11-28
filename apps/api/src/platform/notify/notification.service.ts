@@ -206,6 +206,17 @@ export class NotificationService {
    * Queues an email. `footer` replaces the default member footer, for example for job applicants, who have no
    * SampCrew account.
    */
+  /** Queues an email with a designed HTML body (a leave application form) and its plain-text copy. */
+  async queueHtmlEmail(tx: AnyTx, tenantId: string | null, to: string, subject: string, text: string, html: string, template: string) {
+    const foot = 'SampCrew by SAMPLEDGE. You received this because you have an account in a SampCrew workspace.';
+    await tx.collection('email_messages').insert({ tenant_id: tenantId, to_email: to, subject, text_body: `${text}\n\n--\n${foot}`, html_body: html, template });
+  }
+
+  /** The Web Portal address links in emails point to. */
+  webUrl(path = ''): string {
+    return `${this.config.WEB_PUBLIC_URL}${path}`;
+  }
+
   async queueEmail(tx: AnyTx, tenantId: string | null, to: string, subject: string, text: string, template: string, footer?: string) {
     const foot = footer ?? 'SampCrew by SAMPLEDGE. You received this because you have an account in a SampCrew workspace.';
     await tx.collection('email_messages').insert({ tenant_id: tenantId, to_email: to, subject, text_body: `${text}\n\n--\n${foot}`, template });
