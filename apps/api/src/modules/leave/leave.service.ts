@@ -1,4 +1,6 @@
 import { Injectable, type OnModuleInit } from '@nestjs/common';
+import { CustomFieldsService } from '../custom-fields/custom-fields.service';
+import { checkFormRules } from '../employees/forms';
 import type { z } from 'zod';
 import {
   LEAVE_AUTHORITY_LABELS, LEAVE_VISIBILITY_LABELS, leaveApprovalRules, leaveCodeFrom, leaveEligibility, leaveMath, leaveRef, leaveRoutesFor, leaveTypeInput, leaveTypePolicy,
@@ -87,6 +89,7 @@ export class LeaveService implements OnModuleInit {
     private readonly discipline: DisciplineService,
     private readonly files: CommFilesService,
     private readonly storage: StorageService,
+    private readonly customFields: CustomFieldsService,
   ) {}
 
   onModuleInit() {
@@ -944,6 +947,8 @@ export class LeaveService implements OnModuleInit {
     const actor = requestContext.tenantActor();
     return this.db.tenant(async (tx) => {
       const { e, onBehalf } = await this.requestTarget(tx, input.employeeId);
+      // The Leave request form as the Super Workspace set it up (issue #91), e.g. a required reason.
+      await checkFormRules(tx, 'leave_request', input as Record<string, unknown>, ['reason']);
       // One request at a time per person, so the overlap and balance checks see every other request.
       await tx.collection('employees').lock({ id: e.id });
       const ev = await this.evaluate(tx, e, input, onBehalf);
@@ -968,6 +973,8 @@ export class LeaveService implements OnModuleInit {
         meta: { leaveTypeCode: type.code, leaveTypeName: type.name, paid: Boolean(type.paid), halfDay: input.startHalf !== 'full' || input.endHalf !== 'full' },
       });
       await tx.collection('leave_requests').updateOne({ id: row.id }, { $set: { approval_request_id: approvalId } });
+      // Custom fields of the Leave request form (Form management, issue #91), saved with the request.
+      if (input.customFields) await this.customFields.save('leave_request', row.id as string, input.customFields, { tx, creating: true });
       await this.audit.record(tx, {
         action: 'leave_request.submitted', resourceType: 'leave_request', resourceId: row.id,
         changes: { employeeId: e.id, leaveTypeId: input.leaveTypeId, startDate: input.startDate, endDate: input.endDate, days: fromH(ev.daysH), route: ev.route },
@@ -1064,6 +1071,7 @@ export class LeaveService implements OnModuleInit {
       const r = await tx.collection<RequestRow>('leave_requests').findOne({ id });
       if (!r) throw Errors.notFound('Leave request');
       const e = await this.employee(tx, r.employee_id);
+      await checkFormRules(tx, 'leave_request', input as Record<string, unknown>, ['reason']);
       await tx.collection('employees').lock({ id: e.id });
       const { isApprover, self } = await this.rolesOn(tx, r, e);
       if (r.status !== 'pending' && r.status !== 'approved') throw Errors.conflict('invalid_state', `This request is already ${r.status}`);
@@ -1115,6 +1123,7 @@ export class LeaveService implements OnModuleInit {
           meta,
         });
         await tx.collection('leave_requests').updateOne({ id }, { $set: { approval_request_id: approvalId } });
+        if (input.customFields) await this.customFields.save('leave_request', id, input.customFields, { tx });
         await this.audit.record(tx, { action: 'leave_request.modified', resourceType: 'leave_request', resourceId: id, changes, metadata: { before, restartedApproval: true } });
         await this.outbox.publish(tx, actor.tenantId, 'leave.requested', { leaveRequestId: id, employeeId: e.id });
         return this.loadRequest(tx, id);
@@ -1129,6 +1138,8 @@ export class LeaveService implements OnModuleInit {
         meta,
       });
       await tx.collection('leave_requests').updateOne({ id: row.id }, { $set: { approval_request_id: approvalId } });
+      // Custom fields of the Leave request form (Form management, issue #91), saved with the request.
+      if (input.customFields) await this.customFields.save('leave_request', row.id as string, input.customFields, { tx, creating: true });
       await this.audit.record(tx, { action: 'leave_request.change_requested', resourceType: 'leave_request', resourceId: row.id, changes, metadata: { replaces: id, before } });
       await this.outbox.publish(tx, actor.tenantId, 'leave.requested', { leaveRequestId: row.id, employeeId: e.id });
       return this.loadRequest(tx, row.id as string);

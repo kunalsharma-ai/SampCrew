@@ -1,4 +1,5 @@
 'use client';
+import { serverNow } from '@/lib/server-clock';
 import { resolveLayout, type DashboardLayout, type DashboardWidget } from '@crew/contracts';
 import { AutoHelp, Badge, Button, Card, CardBody, CardHeader, Textarea, buttonClass, cn } from '@crew/ui';
 import {
@@ -55,6 +56,8 @@ export function HomeDashboard(props: {
   myDay?: React.ReactNode;
   /** Below a level's own Home: no greeting, KPIs or attention list of its own (the level's Home has them). */
   embedded?: boolean;
+  /** The workspace time zone, for the greeting. */
+  timeZone?: string;
 }) {
   const { dashboard: d } = props;
   const { openThemes, openAssistant } = useExperience();
@@ -62,7 +65,8 @@ export function HomeDashboard(props: {
   const [editing, setEditing] = useState(false);
   const [saving, startSaving] = useTransition();
   const [saved, setSaved] = useState<string | null>(null);
-  const hour = new Date().getHours();
+  // The workspace's time zone and the server's clock, not the laptop's (issue #91 point 1).
+  const hour = Number(new Intl.DateTimeFormat('en-GB', { timeZone: props.timeZone || undefined, hour: '2-digit', hourCycle: 'h23' }).format(new Date(serverNow())));
   const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
 
   const available = (w: DashboardWidget) => {
@@ -596,7 +600,7 @@ function NotesWidget({ initial }: { initial: string }) {
   const save = (value: string) => start(async () => {
     if (value === last.current) return;
     const r = await saveNotesAction(value);
-    if (r.ok) { last.current = value; setStatus(`Saved ${new Date().toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}`); } else setStatus(r.message ?? 'Not saved');
+    if (r.ok) { last.current = value; setStatus(`Saved ${new Date(serverNow()).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}`); } else setStatus(r.message ?? 'Not saved');
   });
   return (
     <Card className="h-full">

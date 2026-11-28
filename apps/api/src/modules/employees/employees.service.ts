@@ -1,4 +1,7 @@
 import { WorkspaceLimitsService } from '../workspace-limits/workspace-limits.service';
+import { CustomFieldsService } from '../custom-fields/custom-fields.service';
+import { checkFormRules } from './forms';
+import { uniqueAs } from './unique';
 import { Inject, Injectable } from '@nestjs/common';
 import type { z } from 'zod';
 import { ADULT_AGE, ageOn, catalogueDesignation, dateOfBirthError, fieldValueText, isMinorOn, PHOTO_MAX_BYTES, PHOTO_TYPES, phoneError, type SetAccessRequest } from '@crew/contracts';
@@ -127,6 +130,7 @@ export class EmployeesService {
     private readonly devices: DevicesService,
     private readonly limits: WorkspaceLimitsService,
     private readonly onboardingDocs: OnboardingDocumentsService,
+    private readonly customFields: CustomFieldsService,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
   ) {}
 
@@ -762,6 +766,13 @@ export class EmployeesService {
       // The onboarding documents HR chose on the form (issue #89): assigned in this same transaction, so the employee
       // and their checklist are created together or not at all.
       if (input.onboardingDocuments) await this.onboardingDocs.assignInTx(tx, row.id, input.onboardingDocuments, { atHire: true });
+      // Custom employee fields asked for on Add Employee (Form management, issue #91), saved with the hire; the
+      // fields the Super Workspace made required must be filled in.
+      if (input.customFields) {
+        // The new record joins the HR Workspace's people only now: read the member's reach again.
+        this.authz.forget();
+        await this.customFields.save('employee', row.id, input.customFields, { tx, creating: true });
+      }
       // Hired straight into a permanent position: the leave rules' days on confirmation are credited now.
       if (!existing && status === 'active' && confirmedOn) await this.leave.creditOnConfirmation(tx, row.id, confirmedOn);
 
@@ -1220,6 +1231,8 @@ export class EmployeesService {
         if (blocked.length) throw Errors.forbidden(`HR maintains these fields: ${blocked.join(', ')}`);
       }
       if (!keys.length) return before;
+      // The Employee profile form as the Super Workspace set it up (issue #91): a required field cannot be emptied.
+      await checkFormRules(tx, 'employee_profile', input as Record<string, unknown>, keys);
       // The same rules as the hire form, against what is already on the record.
       if (input.dateOfBirth) {
         const bad = dateOfBirthError(input.dateOfBirth, before.dateOfJoining);
@@ -1522,11 +1535,7 @@ function draftView(d: Record<string, unknown>) {
 }
 
 /** Turns a unique-constraint violation into a readable 409. */
-export function uniqueAs(code: string, message: string) {
-  return (err: unknown): never => {
-    if ((err as { code?: string }).code === '23505') throw Errors.conflict(code, message);
-    throw err;
-  };
-}
+// Kept in its own file so master data (and custom fields through it) can use it without importing this service.
+export { uniqueAs };
 
 export { temporaryPasswordValue };

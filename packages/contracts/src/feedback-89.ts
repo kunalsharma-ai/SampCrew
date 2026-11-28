@@ -27,28 +27,29 @@ export const EMAIL_DOMAIN = /^(?=.{3,190}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?
 export const emailDomainOf = (email: string | null | undefined) => (email ?? '').trim().toLowerCase().split('@')[1] ?? '';
 
 /**
- * The built-in fields of the Add Employee form that the Super Workspace configures. Fields marked `locked` are always
- * shown and required, because a record cannot exist without them; `noHide` fields may be made optional or required
- * but stay on the form (the work email is the sign-in name).
+ * The built-in fields of the Add Employee form that the Super Workspace configures. Issue #91: no field is compulsory
+ * by default and every field can be hidden or made optional, except the first name (`locked`): a person's record
+ * cannot exist without a name. When the joining date or the legal entity is hidden or left empty, the form uses
+ * today and the company's first legal entity (`fallback`), so an employee can still be created.
  */
 export const EMPLOYEE_FORM_FIELDS = [
   { key: 'firstName', label: 'First name', step: 'Personal details', locked: true },
   { key: 'lastName', label: 'Last name', step: 'Personal details' },
   { key: 'preferredName', label: 'Preferred name', step: 'Personal details' },
-  { key: 'workEmail', label: 'Work email', step: 'Personal details', noHide: true },
+  { key: 'workEmail', label: 'Work email', step: 'Personal details' },
   { key: 'personalEmail', label: 'Personal email', step: 'Personal details' },
   { key: 'phone', label: 'Phone', step: 'Personal details' },
   { key: 'dateOfBirth', label: 'Date of birth', step: 'Personal details' },
   { key: 'gender', label: 'Gender', step: 'Personal details' },
-  { key: 'dateOfJoining', label: 'Date of joining', step: 'Employment', locked: true },
-  { key: 'legalEntityId', label: 'Legal entity', step: 'Employment', locked: true },
-  { key: 'employmentType', label: 'Employment type', step: 'Employment', locked: true },
-  { key: 'designationId', label: 'Designation', step: 'Employment', locked: true },
+  { key: 'dateOfJoining', label: 'Date of joining', step: 'Employment', fallback: 'Today' },
+  { key: 'legalEntityId', label: 'Legal entity', step: 'Employment', fallback: 'The first legal entity' },
+  { key: 'employmentType', label: 'Employment type', step: 'Employment', fallback: 'Full time' },
+  { key: 'designationId', label: 'Designation', step: 'Employment' },
   { key: 'grade', label: 'Grade', step: 'Employment' },
   { key: 'departmentId', label: 'Department', step: 'Department & reporting' },
   { key: 'locationId', label: 'Location', step: 'Department & reporting' },
   { key: 'managerEmployeeId', label: 'Reporting manager', step: 'Department & reporting' },
-] as const satisfies readonly { key: string; label: string; step: string; locked?: boolean; noHide?: boolean }[];
+] as const satisfies readonly { key: string; label: string; step: string; locked?: boolean; noHide?: boolean; fallback?: string }[];
 export type EmployeeFormFieldKey = (typeof EMPLOYEE_FORM_FIELDS)[number]['key'];
 export const EMPLOYEE_FORM_FIELD_KEYS = EMPLOYEE_FORM_FIELDS.map((f) => f.key) as [EmployeeFormFieldKey, ...EmployeeFormFieldKey[]];
 
@@ -59,7 +60,10 @@ const fieldRule = z.object({
   label: z.string().trim().max(60).nullable().default(null),
   /** A line of help under the field. */
   hint: z.string().trim().max(200).nullable().default(null),
+  /** The example text inside an empty field (issue #91); null keeps the built-in one. */
+  placeholder: z.string().trim().max(80).nullable().default(null),
 });
+export { fieldRule as formFieldRule };
 export type FormFieldRule = z.infer<typeof fieldRule>;
 
 export const employeeFormSettingsInput = z.object({
@@ -78,7 +82,7 @@ export type EmployeeFormSettingsInput = z.infer<typeof employeeFormSettingsInput
 
 export interface EmployeeFormSettings extends EmployeeFormSettingsInput {
   /** Every built-in field with its rule as it applies now (defaults filled in). */
-  resolved: { key: EmployeeFormFieldKey; label: string; builtInLabel: string; step: string; locked: boolean; noHide: boolean; visible: boolean; required: boolean; hint: string | null }[];
+  resolved: { key: EmployeeFormFieldKey; label: string; builtInLabel: string; step: string; locked: boolean; noHide: boolean; visible: boolean; required: boolean; hint: string | null; placeholder: string | null; fallback: string | null }[];
   updatedAt: string | null;
   updatedBy: string | null;
   canChange: boolean;
@@ -93,7 +97,8 @@ export function resolveEmployeeForm(s: Pick<EmployeeFormSettingsInput, 'fields'>
     const noHide = 'noHide' in f && f.noHide === true;
     const r = s.fields[f.key];
     const visible = locked || noHide || (r?.visible ?? true);
-    return { key: f.key, builtInLabel: f.label, label: r?.label || f.label, step: f.step, locked, noHide, visible, required: locked || (visible && (r?.required ?? false)), hint: r?.hint ?? null };
+    const fallback = 'fallback' in f ? f.fallback : null;
+    return { key: f.key, builtInLabel: f.label, label: r?.label || f.label, step: f.step, locked, noHide, visible, required: locked || (visible && (r?.required ?? false)), hint: r?.hint ?? null, placeholder: r?.placeholder ?? null, fallback };
   });
 }
 

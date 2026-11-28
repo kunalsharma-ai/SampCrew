@@ -1,15 +1,16 @@
 import { ModuleNotices } from '@/components/module-notices';
-import { Alert, Card, CardHeader, PageHeader } from '@crew/ui';
+import { Alert, PageHeader } from '@crew/ui';
 import type { Metadata } from 'next';
 import { ApiError, api, load, loadOptional } from '@/lib/api';
 import { allowed, ModuleOverview } from '@/components/module-overview';
 import { can } from '@/lib/nav';
+import { todayIn } from '@/lib/time';
 import type { LeaveCalendarData, LeaveMine, LeaveRequest, Me } from '@/lib/types';
 import { BalanceCards } from '../employees/[id]/tabs';
 import { LeaveCalendar } from './leave-calendar';
 import { LeaveYear } from './leave-year';
 import { monthRange } from './month';
-import { ApplyLeave, MyRequests, TeamAway } from './leave-view';
+import { ApplyLeave, MyRequestsCard, TeamAway } from './leave-view';
 import type { CompOff } from './actions';
 import { CompOffCard } from './comp-off';
 import { MyLeaveTypes } from './my-types';
@@ -36,7 +37,7 @@ export default async function LeavePage({ searchParams }: { searchParams: Promis
   }
   const balances = { year: mine.year, balances: mine.types };
   const scope = me.permissions['leave:read'];
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayIn(me.tenant.timezone);
   const month = sp.month && /^\d{4}-(0[1-9]|1[0-2])$/.test(sp.month) ? sp.month : today.slice(0, 7);
   // The year view shows all twelve months; the month view one month with room to apply from a day.
   const yearView = sp.view === 'year';
@@ -80,15 +81,13 @@ export default async function LeavePage({ searchParams }: { searchParams: Promis
             {can(me, 'leave:allocate') && <> Create one on <a className="underline" href="/leave/manage?tab=types">Leave management</a>.</>}
           </Alert>
         )}
+        {/* Issue #91 point 2: the count cards, then My requests (collapsible), then the calendar, then My leave types last. */}
         <BalanceCards balances={balances.balances} />
-        <MyLeaveTypes types={mine.types} />
+        <MyRequestsCard requests={requests} balances={balances.balances} hasFields={Boolean(leaveFields?.some((f) => f.enabled))} />
         {yearView ? <LeaveYear data={calendar} year={year} today={today} /> : <LeaveCalendar data={calendar} month={month} today={today} canApply={canApply} />}
-        <Card>
-          <CardHeader title="My requests" description="A request waiting for approval can be changed or cancelled. Approved leave that has not started can be changed too: the change goes for approval and replaces it once approved." />
-          <MyRequests requests={requests} balances={balances.balances} hasFields={Boolean(leaveFields?.some((f) => f.enabled))} />
-        </Card>
         {compOffs && (compOffs.length > 0 || mine.types.some((t) => t.kind === 'comp_off')) && <CompOffCard rows={compOffs} />}
         {away && <TeamAway rows={away} />}
+        <MyLeaveTypes types={mine.types} />
       </div>
     </>
   );

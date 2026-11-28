@@ -1,13 +1,14 @@
 'use client';
 import { useCreateParam } from '@/lib/use-create-param';
 import { Alert, Button, Card, CardHeader, Dialog, EmptyState, Field, Input, Select, StatusPill, Table, TBody, TD, TH, THead, TR, Textarea } from '@crew/ui';
-import { CalendarPlus, Paperclip, X } from 'lucide-react';
+import { CalendarPlus, ChevronDown, ChevronUp, Paperclip, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState, useTransition } from 'react';
 import type { LeaveBalance, LeaveRequest } from '@/lib/types';
 import { RequestsTable } from '../employees/[id]/tabs';
-import { cancelLeaveAction, type LeaveRoute, modifyLeaveAction, type Preview, previewLeaveAction, previewModifyLeaveAction, requestLeaveAction, uploadLeaveDocumentAction } from './actions';
-import { RecordFieldsButton } from '@/components/custom-fields-card';
+import { cancelLeaveAction, leaveFormAction, type LeaveRoute, modifyLeaveAction, type Preview, previewLeaveAction, previewModifyLeaveAction, requestLeaveAction, uploadLeaveDocumentAction } from './actions';
+import { FieldInput, RecordFieldsButton } from '@/components/custom-fields-card';
+import { checkFieldValue, type FormView } from '@crew/contracts';
 
 export function ApplyLeave({ balances }: { balances: LeaveBalance[] }) {
   const [open, setOpen, prefill] = useCreateParam('leave', ['date']);
@@ -42,6 +43,20 @@ export function LeaveDialog({ balances, open, onClose, date, change, forEmployee
   const [pending, start] = useTransition();
   const [docs, setDocs] = useState<{ id: string; name: string }[]>([]);
   const [uploading, setUploading] = useState(false);
+  // The form as the Super Workspace set it up (Form management, issue #91): the reason's rule and custom fields.
+  const [formView, setFormView] = useState<FormView | null>(null);
+  const [extra, setExtra] = useState<Record<string, unknown>>({});
+  const [extraErrors, setExtraErrors] = useState<Record<string, string>>({});
+  useEffect(() => {
+    if (!open || formView) return;
+    let live = true;
+    void leaveFormAction().then((r) => { if (live && r.ok && r.data) setFormView(r.data); });
+    return () => { live = false; };
+  }, [open, formView]);
+  const reasonRule = formView?.resolved.find((f) => f.key === 'reason');
+  const showReason = reasonRule?.visible ?? true;
+  // Files are attached from the request's Details after it is sent; every other type is asked here.
+  const extraFields = (formView?.customFields ?? []).filter((f) => f.enabled && !f.archivedAt && f.type !== 'file');
   const type = balances.find((b) => b.leaveTypeId === form.leaveTypeId);
   const single = form.startDate === form.endDate;
   const body = () => {
@@ -56,6 +71,7 @@ export function LeaveDialog({ balances, open, onClose, date, change, forEmployee
     if (form.reason.trim()) b.reason = form.reason.trim();
     if (form.route) b.approvalRoute = form.route;
     if (docs.length) b.documentIds = docs.map((d) => d.id);
+    if (extraFields.length) b.customFields = Object.fromEntries(Object.entries(extra).filter(([, x]) => x !== undefined && x !== null && x !== ''));
     // HR applying for one of their people (the API checks they approve leave for them).
     if (forEmployee && !change) b.employeeId = forEmployee.id;
     return b;
@@ -86,6 +102,12 @@ export function LeaveDialog({ balances, open, onClose, date, change, forEmployee
           onSubmit={(e) => {
             e.preventDefault();
             setError(null);
+            // The same checks the API makes, so a missing reason or field shows next to it at once.
+            const local: Record<string, string> = {};
+            if (showReason && reasonRule?.required && !form.reason.trim()) local.reason = `${reasonRule.label} is required`;
+            for (const f of extraFields) { const c = checkFieldValue(f, extra[f.key] ?? null); if (!c.ok) local[f.key] = c.error; }
+            setExtraErrors(local);
+            if (Object.keys(local).length) { setError('Some fields need attention'); return; }
             start(async () => {
               const r = change ? await modifyLeaveAction(change.id, body()) : await requestLeaveAction(body());
               if (r.ok && forEmployee) {
@@ -163,7 +185,10 @@ export function LeaveDialog({ balances, open, onClose, date, change, forEmployee
               )}
             </div>
           )}
-          <Field label="Reason" className="sm:col-span-2">{(p) => <Textarea {...p} name="reason" maxLength={1000} value={form.reason} onChange={(e) => setForm({ ...form, reason: e.target.value })} />}</Field>
+          {showReason && <Field label={reasonRule?.label ?? 'Reason'} required={reasonRule?.required} hint={reasonRule?.hint ?? undefined} error={extraErrors.reason} className="sm:col-span-2">{(p) => <Textarea {...p} name="reason" maxLength={1000} placeholder={reasonRule?.placeholder ?? undefined} value={form.reason} onChange={(e) => setForm({ ...form, reason: e.target.value })} />}</Field>}
+          {!change && extraFields.map((f) => (
+            <FieldInput key={f.id} r={{ field: f, value: extra[f.key] ?? null, text: '', editable: true, fits: true }} value={extra[f.key] ?? null} onChange={(x) => setExtra((cur) => ({ ...cur, [f.key]: x }))} error={extraErrors[f.key]} entity="leave_request" recordId="" />
+          ))}
           <div className="sm:col-span-2" aria-live="polite">
             {previewError ? <Alert tone="warning">{previewError}</Alert> : preview && (
               <div className="rounded-lg border border-border bg-bg-subtle/60 px-4 py-3 text-[0.8125rem]">
@@ -180,15 +205,59 @@ export function LeaveDialog({ balances, open, onClose, date, change, forEmployee
   );
 }
 
-export function MyRequests({ requests, balances, hasFields }: { requests: LeaveRequest[]; balances: LeaveBalance[]; hasFields?: boolean }) {
+/** How many requests "My requests" shows before "Show all" (issue #91 point 2: long lists stay manageable). */
+export const MY_REQUESTS_PREVIEW = 5;
+
+/**
+ * "My requests" as a card that collapses and expands. Open by default with the latest few; "Show all" lists the rest.
+ * Requests still waiting are always among those shown, so nothing that needs the person is hidden.
+ */
+export function MyRequestsCard({ requests, balances, hasFields }: { requests: LeaveRequest[]; balances: LeaveBalance[]; hasFields?: boolean }) {
+  const [open, setOpen] = useState(true);
+  const [all, setAll] = useState(false);
+  const waiting = requests.filter((r) => r.status === 'pending');
+  const shown = all ? requests : [...waiting, ...requests.filter((r) => r.status !== 'pending')].slice(0, Math.max(MY_REQUESTS_PREVIEW, waiting.length));
+  const hidden = requests.length - shown.length;
+  return (
+    <Card data-testid="my-requests">
+      <CardHeader
+        title="My requests"
+        description="A request waiting for approval can be changed or cancelled. Approved leave that has not started can be changed too: the change goes for approval and replaces it once approved."
+        action={
+          <div className="flex items-center gap-2">
+          {requests.length > 0 && <span className="text-xs text-fg-muted tabular-nums" data-testid="my-requests-count">{requests.length} {requests.length === 1 ? 'request' : 'requests'}</span>}
+          <Button size="sm" variant="ghost" aria-expanded={open} data-testid="my-requests-toggle" onClick={() => setOpen((o) => !o)}>
+            {open ? <><ChevronUp className="size-4" /> Collapse</> : <><ChevronDown className="size-4" /> Expand</>}
+          </Button>
+          </div>
+        }
+      />
+      {open && (
+        <>
+          <MyRequests requests={shown} allRequests={requests} balances={balances} hasFields={hasFields} />
+          {(hidden > 0 || all) && requests.length > MY_REQUESTS_PREVIEW && (
+            <div className="flex justify-center border-t border-border px-5 py-3">
+              <Button size="sm" variant="secondary" data-testid="my-requests-more" onClick={() => setAll((a) => !a)}>
+                {all ? 'Show fewer' : `Show all ${requests.length} requests`}
+              </Button>
+            </div>
+          )}
+        </>
+      )}
+    </Card>
+  );
+}
+
+export function MyRequests({ requests, allRequests, balances, hasFields }: { requests: LeaveRequest[]; allRequests?: LeaveRequest[]; balances: LeaveBalance[]; hasFields?: boolean }) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [changing, setChanging] = useState<LeaveRequest | null>(null);
   const today = new Date().toISOString().slice(0, 10);
   // Approved leave with a change waiting cannot be changed again until that change is decided.
-  const changeWaiting = new Set(requests.filter((r) => r.status === 'pending' && r.replacesRequestId).map((r) => r.replacesRequestId!));
-  const byId = new Map(requests.map((r) => [r.id, r]));
+  const every = allRequests ?? requests;
+  const changeWaiting = new Set(every.filter((r) => r.status === 'pending' && r.replacesRequestId).map((r) => r.replacesRequestId!));
+  const byId = new Map(every.map((r) => [r.id, r]));
   return (
     <>
       {error && <div className="px-5"><Alert tone="danger">{error}</Alert></div>}

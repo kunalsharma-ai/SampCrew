@@ -21,7 +21,7 @@ const BLOCK_LABEL: Record<string, string> = { not_in_plan: 'Not in your plan', w
 
 /** Settings pages for each module, shown when the member may open them. */
 const SETTINGS: { href: string; label: string; about: string; permission: string; feature?: string }[] = [
-  { href: '/settings/custom-fields', label: 'Custom fields', about: 'Extra fields on employees, assets, verification cases, candidates and leave requests.', permission: 'fields:manage' },
+  { href: '/settings/forms', label: 'Form management', about: 'Every form (Add Employee, Employee profile, Leave request, assets, verification, candidates, clients): built-in and custom fields, set by the Super Workspace.', permission: 'fields:manage' },
   { href: '/settings/roles', label: 'Custom roles', about: 'Create roles of your own, such as Payroll checker.', permission: 'roles:read' },
   { href: '/people', label: 'Logins & access', about: 'Who can sign in, and which roles each person holds (and for which departments).', permission: 'users:read' },
   { href: '/organization', label: 'Company structure', about: 'Legal entities, business units, departments and locations.', permission: 'org:read' },

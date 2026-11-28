@@ -19,6 +19,7 @@ const FOUNDATION: Record<string, string> = {
   MailSetupController: 'The company email server invitations and password resets go out by, needed on every plan',
   EmailTemplatesController: 'The company email design used for invitations, password resets and notices, which every plan sends',
   EmployeeFormController: 'How the Add Employee form works (work email domain, fields), part of Core HR on every plan',
+  FormsController: 'Form management (issue #91): the fields of every form, set up by the Super Workspace; custom fields on a module record check that module in CustomFieldsService',
   MeController: 'The signed-in person, their sessions, password and two-step verification',
   PasswordResetsController: 'Super Workspace record of forgot-password resets, a security baseline like the audit trail',
   ApprovalsController: 'One inbox for approvals raised by the modules; each item is created by a gated module',

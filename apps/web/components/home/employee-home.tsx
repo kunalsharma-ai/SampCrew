@@ -12,6 +12,7 @@ import { useEffect, useMemo, useState, useTransition } from 'react';
 import { punchAction } from '@/app/(app)/attendance/actions';
 import { punchLocation } from '@/lib/locate';
 import { hm } from '@/lib/time';
+import { serverNow, syncServerClock, useServerNow } from '@/lib/server-clock';
 import type { AttendanceToday, LeaveBalance, MyCalendar, MyRewards } from '@/lib/types';
 import { ActionCenter, Empty, Progress, relative, SectionError, shortDate, StatCard } from './ui';
 
@@ -51,14 +52,11 @@ type Phase = 'not_in' | 'working' | 'on_break' | 'done';
 /** Today's attendance: status, times, progress and the one button the person needs now. */
 export function AttendanceHero({ today, renderedAt }: { today: AttendanceToday; renderedAt: number }) {
   const router = useRouter();
-  const [now, setNow] = useState(renderedAt);
+  // A fresh server reading with today's attendance sets the page clock before it starts ticking.
+  useEffect(() => { if (today.serverTime) syncServerClock(today.serverTime); }, [today.serverTime]);
+  const now = useServerNow(today.serverTime ?? renderedAt, 1000);
   const [pending, start] = useTransition();
   const [notice, setNotice] = useState<{ tone: Tone; text: string } | null>(null);
-  useEffect(() => {
-    setNow(Date.now());
-    const id = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => window.clearInterval(id);
-  }, []);
   const tz = today.timeZone;
   const t = tally(today.punches, now);
   const expected = today.shift ? ((toMin(today.shift.end) - toMin(today.shift.start) + 1440) % 1440 || 1440) : 480;
@@ -89,7 +87,7 @@ export function AttendanceHero({ today, renderedAt }: { today: AttendanceToday; 
       const outside = pz.geofence === 'outside' && !pz.workZone;
       const where = pz.workZone === 'office' ? ` at ${pz.place ?? 'the office'}` : pz.workZone === 'remote' ? ', away from the office' : '';
       const unverified = pz.workZone === 'unverified';
-      setNotice({ tone: outside || unverified ? 'warning' : 'success', text: `${done ?? (direction === 'in' ? 'Checked in' : 'Checked out')}${where} at ${clock(new Date().toISOString())}.${outside ? ' You appear to be away from your workplace; this is recorded.' : ''}${unverified ? ` ${unverifiedReason(fix.locationStatus === 'ok' ? 'poor_accuracy' : fix.locationStatus === 'denied' ? 'denied' : fix.locationStatus ? 'unavailable' : 'no_location', { accuracyM: fix.accuracyM ?? null, maxAccuracyM: today.workMode?.maxAccuracyM ?? null })} Until then today waits for verification.` : ''}` });
+      setNotice({ tone: outside || unverified ? 'warning' : 'success', text: `${done ?? (direction === 'in' ? 'Checked in' : 'Checked out')}${where} at ${clock(new Date(serverNow()).toISOString())}.${outside ? ' You appear to be away from your workplace; this is recorded.' : ''}${unverified ? ` ${unverifiedReason(fix.locationStatus === 'ok' ? 'poor_accuracy' : fix.locationStatus === 'denied' ? 'denied' : fix.locationStatus ? 'unavailable' : 'no_location', { accuracyM: fix.accuracyM ?? null, maxAccuracyM: today.workMode?.maxAccuracyM ?? null })} Until then today waits for verification.` : ''}` });
       window.dispatchEvent(new Event('crew:punched')); // the top bar's check-in button follows
       router.refresh();
     }

@@ -1011,11 +1011,11 @@ export const WEB_HELP: HelpContent = {
       how: 'The Super Workspace adds, changes and removes documents and templates, and decides whether an HR Workspace may too. HR Workspaces without that permission ask the Super Workspace for a document or for the permission.',
       where: 'Removing a document or template keeps it in the records, and documents already asked for keep their requests.',
     },
-    '/settings/employee-form': {
-      title: 'Add Employee form',
-      what: 'How the Add Employee form works for everyone: the company email domain, which fields show, which are required, and their labels.',
-      how: 'Type your domains; the first one is the example in the form. Turn on Only allow these domains to refuse other addresses. Untick Shown to hide a field, tick Required to make HR fill it in.',
-      where: 'Only the Super Workspace changes it. Locked fields are needed to create an employee.',
+    '/settings/forms': {
+      title: 'Form management',
+      what: 'Every form in SampCrew in one place: Add Employee, Employee profile, Leave request, assets, background verification, candidates and clients.',
+      how: 'Pick a form on the left. For built-in fields, untick Shown to hide one, tick Required to make it compulsory, and change its label, placeholder or help line, then Save. Add, edit, show, hide, require or remove custom fields below.',
+      where: 'Only the Super Workspace changes forms; HR Workspaces and Employee Workspaces get them as set here. No field is required unless you make it so (a person’s first name is always asked).',
     },
     '/settings/email-templates': {
       title: 'Email templates',
@@ -1268,12 +1268,6 @@ export const WEB_HELP: HelpContent = {
       what: 'The ready-made lists behind SampCrew’s dropdowns: industries, departments, job titles, job roles, skills, education, candidate sources and more.',
       how: 'Pick a list, then add your own values, add ready-made ones from the library, rename, group or disable them. Values in use are disabled, never deleted.',
       where: 'Everyone with structure access can see the lists. Changing them needs master data access (departments: structure access).',
-    },
-    '/settings/custom-fields': {
-      title: 'Custom fields',
-      what: 'Your own fields on employees, assets, verification cases, candidates and leave requests, in 14 types.',
-      how: 'Add a field, choose its type, options, default and who can see or change it. Archive a field to hide it without losing its values.',
-      where: 'For people with Custom fields access. Values are filled in on each record.',
     },
   },
 
@@ -1777,10 +1771,11 @@ export const WEB_HELP: HelpContent = {
     '/settings/email-templates': {
       sections: { Preview: { what: 'Your template filled in with a sample message, exactly as it will be sent.', how: 'Send a test to see it in your own inbox.' } },
     },
-    '/settings/employee-form': {
+    '/settings/forms': {
       sections: {
         'Work email domain': { what: 'Your company’s email domains. The first one is shown as the example in Add Employee.', how: 'Turn on Only allow these domains to refuse work emails on any other domain.' },
-        Fields: { what: 'Each field of Add Employee: shown or hidden, required or not, its label and a help line.', how: 'Locked fields are always shown and required.' },
+        'Built-in fields': { what: 'The fields SampCrew’s form has out of the box: shown or hidden, required or not, label, placeholder and help line.', how: 'Nothing is required unless you tick it. Save applies it to every HR Workspace and Employee Workspace at once.' },
+        'Custom fields': { what: 'Fields your company added to this form, in the order they show after the built-in ones.', how: 'Add a field of any type, tick Shown or Required, edit, reorder, archive or delete it.' },
       },
     },
     '/settings/onboarding-documents': {
@@ -2053,9 +2048,6 @@ export const WEB_HELP: HelpContent = {
     },
     '/assets/mine': {
       sections: { Returned: { what: 'Assets you handed back, with the date.' } },
-    },
-    '/settings/custom-fields': {
-      sections: { Fields: { what: 'Your fields for the chosen record type, in the order they show.', how: 'Add, edit, reorder, switch off or archive a field.' } },
     },
     '/verification/[id]': {
       sections: {

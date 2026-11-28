@@ -207,8 +207,8 @@ let current;
     await dialog.locator('input[name=employeeCode]').fill(`KR-${stamp}`);
     await dialog.getByText('Added as a confirmed employee (confirmed 2019-10-01).').waitFor();
     await dialog.locator('input[name=designation]').fill('machine operator');
-    const casual = dialog.getByLabel('Opening balance, Casual Leave');
-    await casual.fill('7.5');
+    // Leave is never typed in at registration (27 Nov feedback): quantities are set in Leave management afterwards.
+    expect((await dialog.getByTestId('hire-leave').count()) === 0, 'the registration form still asks for leave days');
     for (const label of ['Department & reporting', 'Compensation', 'Documents', 'Attendance & access']) {
       await dialog.getByRole('button', { name: `Next: ${label}` }).click();
       await dialog.locator('h3', { hasText: label }).waitFor();
@@ -216,19 +216,15 @@ let current;
     expect((await dialog.locator('select[name=onboardingTemplateId]').inputValue()) === 'none', 'an existing employee got the joining checklist');
     await dialog.getByRole('button', { name: 'Next: Review' }).click();
     await dialog.getByText(`Already working here since 2019-04-01 · code KR-${stamp} · confirmed 2019-10-01`).waitFor();
-    await dialog.getByText('Casual Leave 7.5').waitFor();
     await dialog.locator('button[type=submit]').click();
     await hr.waitForURL(/\/employees\/[0-9a-f-]{36}$/, { timeout: 15000 });
     await hr.getByRole('heading', { name: `Kavita Rane ${stamp}` }).waitFor();
     await hr.getByText(`KR-${stamp}`).first().waitFor();
     await hr.getByText('Machine Operator').first().waitFor();
     const existingUrl = hr.url();
-    await hr.goto(existingUrl + '?tab=leave');
-    const casualCard = hr.locator('div', { hasText: /^Casual Leave/ }).filter({ hasText: 'days available' }).last();
-    await casualCard.getByText('7.50', { exact: true }).waitFor();
     await hr.goto(existingUrl + '?tab=onboarding');
     await hr.getByText(/No onboarding checklist|no checklist/i).first().waitFor();
-    ok('added someone already working here: own code, joined 2019, confirmed from probation, no joining checklist, opening leave balance 7.5');
+    ok('added someone already working here: own code, joined 2019, confirmed from probation, no joining checklist, no leave typed in at registration');
 
     // 6. Employee 360: HR opens Rekha Jadhav. The figures come from her records; pay is not shown to HR admins, who
     //    have no payroll access; the Activity tab has her transfer.

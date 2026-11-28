@@ -1,4 +1,5 @@
 'use client';
+import { useFormRules } from '@/lib/form-rules';
 import { dateOfBirthError, dateOfBirthRange, phoneError } from '@crew/contracts';
 import { Alert, Badge, Button, Card, CardBody, CardHeader, DatePicker, Dialog, EmptyState, Field, Input, Select, StatusPill, Table, TBody, TD, TH, THead, TR, Textarea } from '@crew/ui';
 import { CheckCircle2, Circle, Download, Eye, FileText, Lock, Pencil, Upload } from 'lucide-react';
@@ -91,7 +92,9 @@ const pick = (f: FormData, keys: string[], nullable = false) => {
 export function OverviewTab({ e }: { e: EmployeeProfile }) {
   const [edit, setEdit] = useState(false);
   const editable = e.can.update || e.can.updateOwn;
-  const fields = e.can.update ? ['firstName', 'lastName', 'preferredName', 'workEmail', 'personalEmail', 'phone', 'dateOfBirth', 'gender'] : ['preferredName', 'personalEmail', 'phone'];
+  // The Employee profile form as the Super Workspace set it up (Form management, issue #91).
+  const form = useFormRules('employee_profile');
+  const fields = (e.can.update ? ['firstName', 'lastName', 'preferredName', 'workEmail', 'personalEmail', 'phone', 'dateOfBirth', 'gender'] : ['preferredName', 'personalEmail', 'phone']).filter((k) => form.show(k));
   return (
     <div className="grid gap-6 lg:grid-cols-3">
       <Card className="lg:col-span-2">
@@ -138,6 +141,7 @@ export function OverviewTab({ e }: { e: EmployeeProfile }) {
         validate={(f) => {
           const out: Record<string, string> = {};
           const get = (k: string) => String(f.get(k) ?? '').trim();
+          for (const r of form.rules) if (r.visible && r.required && fields.includes(r.key) && f.has(r.key) && !get(r.key)) out[r.key] = `${r.label} is required`;
           const ph = phoneError(get('phone'));
           if (ph) out.phone = ph;
           const born = f.has('dateOfBirth') ? dateOfBirthError(get('dateOfBirth'), e.dateOfJoining) : null;
@@ -148,22 +152,22 @@ export function OverviewTab({ e }: { e: EmployeeProfile }) {
         }}
       >
         {e.can.update && <>
-          <Field label="First name" required>{(p) => <Input {...p} name="firstName" defaultValue={e.firstName} required />}</Field>
-          <Field label="Last name">{(p) => <Input {...p} name="lastName" defaultValue={e.lastName} />}</Field>
+          <Field label={form.label('firstName', 'First name')} hint={form.hint('firstName')} required>{(p) => <Input {...p} name="firstName" placeholder={form.placeholder('firstName')} defaultValue={e.firstName} required />}</Field>
+          {form.show('lastName') && <Field label={form.label('lastName', 'Last name')} hint={form.hint('lastName')} required={form.required('lastName')}>{(p) => <Input {...p} name="lastName" placeholder={form.placeholder('lastName')} defaultValue={e.lastName} />}</Field>}
         </>}
-        <Field label="Preferred name">{(p) => <Input {...p} name="preferredName" defaultValue={e.preferredName ?? ''} />}</Field>
-        {e.can.update && <Field label="Work email" hint="Their company address, not a personal one">{(p) => <Input {...p} name="workEmail" type="email" autoComplete="off" defaultValue={e.workEmail ?? ''} />}</Field>}
-        <Field label="Personal email">{(p) => <Input {...p} name="personalEmail" type="email" autoComplete="off" defaultValue={e.personalEmail ?? ''} />}</Field>
-        <Field label="Phone" hint="With the country code, such as +91 98201 23456">{(p) => <Input {...p} name="phone" type="tel" inputMode="tel" autoComplete="off" maxLength={40} defaultValue={e.phone ?? ''} />}</Field>
+        {form.show('preferredName') && <Field label={form.label('preferredName', 'Preferred name')} hint={form.hint('preferredName')} required={form.required('preferredName')}>{(p) => <Input {...p} name="preferredName" placeholder={form.placeholder('preferredName')} defaultValue={e.preferredName ?? ''} />}</Field>}
+        {e.can.update && form.show('workEmail') && <Field label={form.label('workEmail', 'Work email')} required={form.required('workEmail')} hint={form.hint('workEmail', 'Their company address, not a personal one')}>{(p) => <Input {...p} name="workEmail" type="email" autoComplete="off" placeholder={form.placeholder('workEmail')} defaultValue={e.workEmail ?? ''} />}</Field>}
+        {form.show('personalEmail') && <Field label={form.label('personalEmail', 'Personal email')} hint={form.hint('personalEmail')} required={form.required('personalEmail')}>{(p) => <Input {...p} name="personalEmail" type="email" autoComplete="off" placeholder={form.placeholder('personalEmail')} defaultValue={e.personalEmail ?? ''} />}</Field>}
+        {form.show('phone') && <Field label={form.label('phone', 'Phone')} required={form.required('phone')} hint={form.hint('phone', 'With the country code, such as +91 98201 23456')}>{(p) => <Input {...p} name="phone" type="tel" inputMode="tel" autoComplete="off" maxLength={40} placeholder={form.placeholder('phone')} defaultValue={e.phone ?? ''} />}</Field>}
         {e.can.update && <>
-          <Field label="Date of birth" hint={`At least 14 on the joining date, ${e.dateOfJoining}`}>{(p) => <BirthDate {...p} joining={e.dateOfJoining} initial={e.dateOfBirth ?? ''} />}</Field>
-          <Field label="Gender">
+          {form.show('dateOfBirth') && <Field label={form.label('dateOfBirth', 'Date of birth')} required={form.required('dateOfBirth')} hint={form.hint('dateOfBirth', `At least 14 on the joining date, ${e.dateOfJoining}`)}>{(p) => <BirthDate {...p} joining={e.dateOfJoining} initial={e.dateOfBirth ?? ''} />}</Field>}
+          {form.show('gender') && <Field label={form.label('gender', 'Gender')} required={form.required('gender')} hint={form.hint('gender')}>
             {(p) => (
               <Select {...p} name="gender" defaultValue={e.gender ?? ''}>
                 <option value="">Not recorded</option><option value="female">Female</option><option value="male">Male</option><option value="non_binary">Non-binary</option><option value="undisclosed">Prefer not to say</option>
               </Select>
             )}
-          </Field>
+          </Field>}
         </>}
       </ActionDialog>
     </div>
@@ -378,7 +382,7 @@ export function JobTab({ e, history, reports, departments, entities, locations, 
 export function BalanceCards({ balances }: { balances: LeaveBalance[] }) {
   if (!balances.length) return <EmptyState title="No leave types apply yet" description="A leave type reaches people as soon as it is visible to their workspace." />;
   return (
-    <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+    <div className="grid grid-cols-2 gap-4 lg:grid-cols-4" data-testid="leave-balances">
       {balances.map((b) => (
         <Card key={b.leaveTypeId} className="p-4">
           <div className="flex items-center gap-2 text-[0.8125rem] font-medium"><span className="size-2.5 rounded-full" style={{ background: b.color }} />{b.name}</div>

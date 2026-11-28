@@ -7,6 +7,7 @@ import { attendanceTodayAction, punchAction } from '@/app/(app)/attendance/actio
 import { punchLocation } from '@/lib/locate';
 import { BREAK_NOTE, tally } from '@/components/home/employee-home';
 import { hm } from '@/lib/time';
+import { serverNow, syncServerClock } from '@/lib/server-clock';
 import type { AttendanceToday } from '@/lib/types';
 
 /** Fired after any punch on the page, so the top bar and the Home card show the same state. */
@@ -20,18 +21,20 @@ export function HeaderPunch() {
   const router = useRouter();
   const pathname = usePathname();
   const [today, setToday] = useState<AttendanceToday | null>(null);
-  const [now, setNow] = useState(() => Date.now());
+  const [now, setNow] = useState(() => serverNow());
   const [message, setMessage] = useState<{ tone: 'ok' | 'error'; text: string } | null>(null);
   const [pending, start] = useTransition();
   const load = useCallback(async () => {
     const r = await attendanceTodayAction();
+    if (r.ok && r.data?.serverTime) syncServerClock(r.data.serverTime);
+    setNow(serverNow());
     setToday(r.ok && r.data ? r.data : null);
   }, []);
   useEffect(() => { void load(); }, [load, pathname]);
   useEffect(() => {
     const on = () => void load();
     window.addEventListener(PUNCHED_EVENT, on);
-    const id = window.setInterval(() => setNow(Date.now()), 30_000);
+    const id = window.setInterval(() => setNow(serverNow()), 30_000);
     return () => { window.removeEventListener(PUNCHED_EVENT, on); window.clearInterval(id); };
   }, [load]);
   useEffect(() => {

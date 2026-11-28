@@ -176,6 +176,8 @@ export const createEmployeeInput = placementInput
     hrWorkspaceId: z.uuid().nullable().optional(),
     /** The onboarding documents to ask for (issue #89), assigned with the employee in one transaction. */
     onboardingDocuments: assignChecklistInput.optional(),
+    /** Custom employee fields from the Add Employee form (Form management, issue #91), by field key. */
+    customFields: z.record(z.string().regex(/^[a-z][a-z0-9_]{1,40}$/), z.unknown()).optional(),
   })
   // Leave is not assigned by hand at registration (issue #89): it comes from the leave rules for the employment
   // status. Only someone already working here brings the balance they have today.
@@ -270,7 +272,7 @@ export const employeeExportQuery = employeeListQuery.omit({ cursor: true, limit:
 /** A hire in progress, saved so it can be resumed later (files are attached only when the hire is completed). */
 export const employeeDraftInput = z.object({
   step: z.number().int().min(0).max(10),
-  data: z.record(z.string().max(60), z.union([z.string().max(500), z.number(), z.boolean(), z.null()])).refine((d) => Object.keys(d).length <= 60, 'Too many fields'),
+  data: z.record(z.string().max(60), z.union([z.string().max(4000), z.number(), z.boolean(), z.null()])).refine((d) => Object.keys(d).length <= 60, 'Too many fields'),
 }).strict();
 
 export const duplicateCheckInput = z.object({

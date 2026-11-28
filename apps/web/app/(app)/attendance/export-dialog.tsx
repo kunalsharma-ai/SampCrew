@@ -1,5 +1,6 @@
 'use client';
 import { Alert, Button, Checkbox, Dialog, Field, Input, Select } from '@crew/ui';
+import { ATTENDANCE_REPORT_ABOUT, ATTENDANCE_REPORT_KINDS, ATTENDANCE_REPORT_LABEL, type AttendanceReportKind } from '@crew/contracts';
 import { Download } from 'lucide-react';
 import { useEffect, useState, useTransition } from 'react';
 import { monthBounds, plusDays } from '@/lib/attendance-period';
@@ -33,6 +34,8 @@ export function ExportDialogButton({ period, filters = {}, label = 'Export', own
   const [yearV, setYear] = useState(period.today.slice(0, 4));
   const [from, setFrom] = useState(period.from);
   const [to, setTo] = useState(period.to);
+  // A report template (27 Nov feedback): the standard export or a classic monthly report.
+  const [report, setReport] = useState<AttendanceReportKind>('standard');
   const [include, setInclude] = useState<'all' | 'people' | 'records'>(filters.include === 'people' || filters.include === 'records' ? filters.include : 'all');
   const [who, setWho] = useState<'all' | 'chosen'>('all');
   const [chosen, setChosen] = useState<string[]>([]);
@@ -68,6 +71,7 @@ export function ExportDialogButton({ period, filters = {}, label = 'Export', own
     for (const [k, v] of Object.entries(filters)) if (v) p.set(k, v);
     p.set('from', span.from); p.set('to', span.to); p.set('format', format);
     if (!filters.include || filters.include !== 'hr_workspaces') p.set('include', include);
+    if (report !== 'standard') p.set('report', report);
     if (who === 'chosen' && !fixedPerson && chosen.length) p.set('employeeIds', chosen.join(','));
     return `/attendance-export?${p}`;
   })();
@@ -109,6 +113,13 @@ export function ExportDialogButton({ period, filters = {}, label = 'Export', own
             </div>
           )}
           {filters.include !== 'hr_workspaces' && (
+            <Field label="Report" hint={ATTENDANCE_REPORT_ABOUT[report]}>{(p) => (
+              <Select {...p} value={report} onChange={(e) => setReport(e.target.value as AttendanceReportKind)} data-testid="export-report">
+                {ATTENDANCE_REPORT_KINDS.map((k) => <option key={k} value={k}>{ATTENDANCE_REPORT_LABEL[k]}</option>)}
+              </Select>
+            )}</Field>
+          )}
+          {filters.include !== 'hr_workspaces' && report === 'standard' && (
             <Field label="What to include" hint={format === 'csv' || format === 'pdf' ? 'A CSV or PDF holds one table: the day-by-day rows when they are included, else the totals.' : undefined}>{(p) => (
               <Select {...p} value={include} onChange={(e) => setInclude(e.target.value as 'all')} data-testid="export-include">
                 <option value="all">Totals per person and every day</option>

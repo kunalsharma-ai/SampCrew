@@ -5,6 +5,7 @@ import { AlertOctagon, AlertTriangle, ArrowRight, BellRing, CheckCircle2, Info, 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState, type ReactNode } from 'react';
+import { useServerNow } from '@/lib/server-clock';
 
 /**
  * Building blocks shared by every level's Home: attention levels shown with an icon and a word (never colour alone),
@@ -173,12 +174,7 @@ export function DailyBars({ days, label, height = 120, onPick }: {
 export function HomeHeader({ name, level, workspace, timeZone, renderedAt, children }: {
   name: string; level: string; workspace: string; timeZone: string; renderedAt: number; children?: ReactNode;
 }) {
-  const [now, setNow] = useState(renderedAt);
-  useEffect(() => {
-    setNow(Date.now());
-    const id = window.setInterval(() => setNow(Date.now()), 30_000);
-    return () => window.clearInterval(id);
-  }, []);
+  const now = useServerNow(renderedAt, 30_000);
   const hour = Number(new Intl.DateTimeFormat('en-GB', { timeZone, hour: '2-digit', hourCycle: 'h23' }).format(new Date(now)));
   const greeting = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
   const date = new Intl.DateTimeFormat('en-GB', { timeZone, weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }).format(new Date(now));

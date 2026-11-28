@@ -3,8 +3,8 @@ import { CalendarRange } from 'lucide-react';
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { load, loadOptional } from '@/lib/api';
-import { STATUS_LABEL } from '@/lib/time';
-import type { Department, Location } from '@/lib/types';
+import { STATUS_LABEL, todayIn } from '@/lib/time';
+import type { Department, Location, Me } from '@/lib/types';
 
 export const metadata: Metadata = { title: 'All employees attendance' };
 
@@ -37,7 +37,7 @@ const shiftMonth = (month: string, by: number) => {
 
 export default async function AttendanceRegisterPage({ searchParams }: { searchParams: Promise<{ month?: string; departmentId?: string; locationId?: string; q?: string }> }) {
   const sp = await searchParams;
-  const month = /^\d{4}-(0[1-9]|1[0-2])$/.test(sp.month ?? '') ? sp.month! : new Date().toISOString().slice(0, 7);
+  const month = /^\d{4}-(0[1-9]|1[0-2])$/.test(sp.month ?? '') ? sp.month! : todayIn((await load<Me>('/me')).tenant.timezone).slice(0, 7);
   const qs = new URLSearchParams({ month });
   for (const k of ['departmentId', 'locationId', 'q'] as const) if (sp[k]) qs.set(k, sp[k]!);
   const [data, departments, locations] = await Promise.all([

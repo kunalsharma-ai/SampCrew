@@ -29,11 +29,13 @@ export async function renderTablePdf(title: string, subtitle: string, rows: Cell
 
   const [W, H] = A4_LANDSCAPE;
   const width = W - 2 * M;
-  const size = 8;
   const [header = [], ...body] = rows;
   const cols = Math.max(1, header.length);
-  // Natural widths, capped, then scaled to the page width.
-  const natural = Array.from({ length: cols }, (_, i) => Math.min(180, Math.max(40, ...rows.slice(0, 200).map((r) => fonts.width(String(r[i] ?? ''), size, i === 0 ? bold : regular) + 10))));
+  // Wide reports (a column per day or per leave type) get a smaller type so their values fit.
+  const size = cols > 16 ? 6.5 : cols > 11 ? 7 : 8;
+  // Natural widths from the values and the longest word of each heading (headings wrap), capped, then scaled.
+  const longestWord = (h: unknown) => Math.max(0, ...String(h ?? '').split(/\s+/).map((w) => fonts.width(w, size, bold)));
+  const natural = Array.from({ length: cols }, (_, i) => Math.min(180, Math.max(26, longestWord(header[i]) + 10, ...body.slice(0, 200).map((r) => fonts.width(String(r[i] ?? ''), size, regular) + 10))));
   const scale = width / natural.reduce((a, b) => a + b, 0);
   const widths = natural.map((w) => w * scale);
   const fit = (s: string, w: number, weight: Weight) => {
@@ -46,15 +48,28 @@ export async function renderTablePdf(title: string, subtitle: string, rows: Cell
   const pages: PDFPage[] = [];
   let page!: PDFPage;
   let y = 0;
-  const rowH = 16;
+  const rowH = size * 2;
+  // Headings wrap onto up to three lines instead of being cut short.
+  const wrap = (s: string, w: number): string[] => {
+    const lines: string[] = [];
+    for (const word of s.split(/\s+/).filter(Boolean)) {
+      const last = lines.at(-1);
+      if (last !== undefined && fonts.width(`${last} ${word}`, size, bold) <= w - 6) lines[lines.length - 1] = `${last} ${word}`;
+      else lines.push(word);
+    }
+    if (lines.length > 3) return [...lines.slice(0, 2), fit(lines.slice(2).join(' '), w, bold)];
+    return lines.length ? lines.map((l) => fit(l, w, bold)) : [''];
+  };
+  const headLines = header.map((h, i) => wrap(String(h ?? ''), widths[i]!));
+  const headH = Math.max(1, ...headLines.map((l) => l.length)) * (size + 2) + 6;
   const drawHeader = () => {
-    page.drawRectangle({ x: M, y: y - rowH + 4, width, height: rowH, color: HEAD });
+    page.drawRectangle({ x: M, y: y - headH + 4, width, height: headH, color: HEAD });
     let x = M;
-    header.forEach((h, i) => {
-      fonts.draw(page, fit(String(h ?? ''), widths[i]!, bold), x + 3, y - 8, size, bold, INK);
+    headLines.forEach((lines, i) => {
+      lines.forEach((l, j) => fonts.draw(page, l, x + 3, y - 8 - j * (size + 2), size, bold, INK));
       x += widths[i]!;
     });
-    y -= rowH;
+    y -= headH;
   };
   const newPage = (first: boolean) => {
     page = pdf.addPage(A4_LANDSCAPE);
@@ -74,7 +89,7 @@ export async function renderTablePdf(title: string, subtitle: string, rows: Cell
     let x = M;
     r.forEach((c, i) => {
       if (i >= cols) return;
-      fonts.draw(page, fit(c === null || c === undefined ? '' : String(c), widths[i]!, regular), x + 3, y - 8, size, regular, INK);
+      fonts.draw(page, fit(c === null || c === undefined ? '' : String(c), widths[i]!, regular), x + 3, y - size, size, regular, INK);
       x += widths[i]!;
     });
     page.drawLine({ start: { x: M, y: y - rowH + 4 }, end: { x: M + width, y: y - rowH + 4 }, thickness: 0.4, color: RULE });
