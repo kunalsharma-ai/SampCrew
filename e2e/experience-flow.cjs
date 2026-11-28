@@ -67,9 +67,12 @@ function leaveDay() {
     // 1. Request leave from the search palette's actions (the top bar no longer has a Create menu, issue #83).
     const op = await signIn(b, 'operator2@demo.crew.local');
     await op.getByRole('button', { name: /Search/ }).first().click();
-    await op.getByRole('combobox', { name: 'Search pages' }).fill('Request time off');
-    await op.getByRole('option', { name: /Request time off/ }).first().click();
-    await op.waitForURL((u) => u.pathname === '/leave');
+    await op.getByRole('combobox', { name: 'Search pages' }).fill('Apply for leave');
+    await op.getByRole('option', { name: /Apply for leave/ }).first().click();
+    await op.waitForURL((u) => u.pathname === '/leave/apply');
+    await op.getByTestId('requester-details').waitFor();
+    // The quick dialog on Leave files the leave straight to the leave approvers (the request form is in requests-flow).
+    await op.goto(BASE + '/leave?create=leave');
     await op.locator('dialog[open] select[name=leaveTypeId]').waitFor();
     expect(!op.url().includes('create='), 'the create parameter should be removed once the form opens');
     const cl = await op.$eval('dialog select[name=leaveTypeId]', (s) => [...s.options].find((o) => o.text.startsWith('Casual Leave'))?.value);
@@ -93,7 +96,7 @@ function leaveDay() {
     const attention = sup.getByRole('region', { name: 'Needs your attention' });
     const item = attention.getByRole('listitem').filter({ hasText: `Neha Deshmukh: Casual Leave, ${day}` });
     await item.waitFor();
-    const approvals = sup.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: /^Approvals/ }).filter({ hasText: /[1-9]/ }).first();
+    const approvals = sup.getByRole('navigation', { name: 'Main' }).getByRole('button', { name: /^My Approvals/ }).filter({ hasText: /[1-9]/ }).first();
     await approvals.waitFor();
     await item.getByRole('button', { name: /^Approve:/ }).click();
     await item.getByText('Approved', { exact: true }).waitFor({ timeout: 10000 });
@@ -136,13 +139,15 @@ function leaveDay() {
     await sup.getByRole('button', { name: 'Expand sidebar' }).click();
     await sup.getByRole('button', { name: 'Collapse sidebar' }).waitFor();
     // The link's name carries its unread marker once a leave notice arrives ("Leave 1 unread notification").
-    await sup.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: /^Leave( \d+ unread notifications?)?$/ }).hover();
-    await sup.getByRole('button', { name: 'Add Leave to favourites' }).click();
+    const leaveLink = sup.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: /^My leave( \d+ unread notifications?)?$/ });
+    if (!(await leaveLink.isVisible())) await sup.getByRole('navigation', { name: 'Main' }).getByRole('button', { name: /^Leave Management/ }).first().click();
+    await leaveLink.hover();
+    await sup.getByRole('button', { name: 'Add My leave to favourites' }).click();
     const favs = sup.getByRole('list', { name: 'Favourites' });
-    await favs.getByRole('link', { name: 'Leave' }).waitFor();
+    await favs.getByRole('link', { name: 'My leave' }).waitFor();
     await sup.waitForTimeout(500);
     await sup.reload();
-    await favs.getByRole('link', { name: 'Leave' }).waitFor();
+    await favs.getByRole('link', { name: 'My leave' }).waitFor();
     ok('focus mode and the sidebar toggled by keyboard; Leave starred into Favourites and kept after a reload');
 
     // 5. Command palette: a person on the team, then a theme by name.

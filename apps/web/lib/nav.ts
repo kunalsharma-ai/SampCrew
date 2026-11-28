@@ -39,6 +39,56 @@ export interface NavGroup {
   items: NavItem[];
 }
 
+/** One Settings for everything (28 November 2026): the hub, and every settings page under it. */
+const SETTINGS: NavItem = {
+    href: '/settings', label: 'Settings', icon: 'settings', ownPage: true, keywords: 'all settings configuration', children: [
+      // Workspace
+      { href: '/settings/workspace', label: 'Workspace settings', icon: 'settings', permission: 'tenant:read' },
+      { href: '/settings/workspace-permissions', label: 'Workspace Permissions', icon: 'shield-check', permission: 'hierarchy:read', adminOnly: true },
+      { href: '/settings/hr-admin', label: 'Super Workspace Admin', icon: 'layout-grid', permission: 'tenant:read' },
+      { href: '/settings/roles', label: 'Access levels', icon: 'shield', permission: 'roles:read' },
+      { href: '/settings/requests', label: 'Requests & approvals', icon: 'send', adminOnly: true, keywords: 'request categories workflow approvers cc' },
+      { href: '/settings/approvals', label: 'Approval settings', icon: 'inbox', permission: 'org:manage' },
+      { href: '/settings/billing', label: 'Plan & billing', icon: 'credit-card', permission: 'billing:read' },
+      { href: '/settings/mobile-app', label: 'Mobile app', icon: 'smartphone', permission: 'mobileapp:manage', superOnly: true },
+      { href: '/settings/notifications/organisation', label: 'Notification policy', icon: 'bell', superOnly: true },
+      { href: '/settings/email', label: 'Email setup', icon: 'mail', permission: 'mail:configure', keywords: 'smtp mail server outgoing email invitation verification password reset' },
+      { href: '/settings/email-templates', label: 'Email templates', icon: 'mail', permission: 'mail:configure', keywords: 'email template html design branding import company layout' },
+      { href: '/settings/support', label: 'Support access', icon: 'life-buoy', permission: 'tenant:read' },
+      // People and organization
+      { href: '/settings/master-data', label: 'Master data', icon: 'list-tree', permission: 'org:read' },
+      { href: '/settings/forms', label: 'Form management', icon: 'text-cursor-input', permission: 'fields:manage', keywords: 'forms fields custom fields extra fields add employee form employee profile leave request work email domain required hidden labels placeholder configuration' },
+      { href: '/settings/onboarding', label: 'Onboarding checklists', icon: 'list-checks', permission: 'employees:create', feature: 'onboarding' },
+      { href: '/settings/onboarding-documents', label: 'Onboarding document library', icon: 'clipboard-list', permission: 'documents:read', feature: 'documents', adminOnly: true, keywords: 'onboarding documents library templates categories mandatory optional' },
+      // Leave and attendance
+      { href: '/settings/leave', label: 'Holidays and leave rules', icon: 'calendar-range', permission: 'leave:allocate', feature: 'leave' },
+      { href: '/settings/attendance', label: 'Attendance settings', icon: 'timer', permission: 'attendance:configure', feature: 'attendance_basic' },
+      { href: '/attendance/offices', label: 'Office locations', icon: 'map-pin', permission: 'attendance:configure', feature: 'attendance_basic' },
+      { href: '/attendance/work-mode/settings', label: 'Office and home rules', icon: 'sliders', permission: 'attendance:configure', feature: 'attendance_basic' },
+      { href: '/settings/attendance-access', label: 'Attendance permissions', icon: 'shield-check', permission: 'hierarchy:manage', feature: 'attendance_basic', superOnly: true },
+      { href: '/settings/devices', label: 'Attendance devices', icon: 'fingerprint', permission: 'devices:manage', feature: 'attendance_advanced' },
+      // Modules
+      { href: '/settings/payroll', label: 'Payroll settings', icon: 'landmark', permission: 'payroll:configure', feature: 'payroll' },
+      { href: '/settings/appraisals', label: 'Appraisal forms & cycles', icon: 'award', permission: 'performance:configure', feature: 'performance' },
+      { href: '/settings/recruitment', label: 'Recruitment settings', icon: 'sliders', permission: 'recruitment:configure', feature: 'recruitment' },
+      { href: '/settings/helpdesk', label: 'Helpdesk settings', icon: 'life-buoy', permission: 'helpdesk:configure', feature: 'helpdesk' },
+      { href: '/settings/document-access', label: 'Document access', icon: 'lock-keyhole', permission: 'documents:manage', feature: 'documents', superOnly: true },
+      { href: '/settings/ai', label: 'AI settings', icon: 'sparkles', permission: 'ai:configure', feature: 'ai_copilot' },
+      { href: '/settings/ai/activity', label: 'AI activity', icon: 'bot', permission: 'audit:read', feature: 'ai_copilot' },
+      // Security
+      { href: '/settings/single-sign-on', label: 'Single sign-on', icon: 'lock-keyhole', permission: 'security:manage', feature: 'sso' },
+      { href: '/settings/integrations', label: 'Integrations', icon: 'plug', permission: 'integrations:manage', feature: 'integrations_advanced' },
+      { href: '/settings/password-resets', label: 'Password resets', icon: 'key', permission: 'users:read', superOnly: true },
+      // Your account
+      { href: '/settings/home', label: 'Home dashboard', icon: 'layout-grid', adminOnly: true, keywords: 'dashboard cards counts widgets home page setup' },
+      { href: '/settings/notifications', label: 'Notification settings', icon: 'bell' },
+      { href: '/settings/appearance', label: 'Appearance', icon: 'palette' },
+      { href: '/settings/signature', label: 'Email signature', icon: 'mail', feature: 'email_signatures' },
+      { href: '/settings/security', label: 'Security', icon: 'key' },
+      { href: '/activity', label: 'Activity log', icon: 'history', keywords: 'login sign in ip location sessions access audit what I did' },
+    ],
+  };
+
 /**
  * Navigation, grouped by HR module. Every item is shown only when the member holds its permission and the plan
  * includes its feature, so each role sees a navigation that matches what it can do.
@@ -49,15 +99,49 @@ export interface NavGroup {
  */
 export const NAV: NavGroup[] = [
   {
+    // The main menu (28 November 2026, Kunal's spec): Dashboard, My Day, Attendance, Requests, Leave Management,
+    // My Approvals, My Requests, Employees, Reports, SampCrew Chat and Settings. Each entry shows only to the people
+    // whose level and permissions allow it.
+    label: 'Main',
+    items: [
+      { href: '/', label: 'Dashboard', icon: 'home', keywords: 'home' },
+      { href: '/my-day', label: 'My Day', icon: 'sun', keywords: 'my attendance my leave my requests personal' },
+      { href: '/attendance', label: 'Attendance', icon: 'clock', permission: 'attendance:punch', feature: 'attendance_basic' },
+      { href: '/requests', label: 'Requests', icon: 'send', keywords: 'wfh work from home early leave late arrival comp off attendance regularization create request' },
+      {
+        href: '', label: 'Leave Management', icon: 'calendar', children: [
+          { href: '/leave', label: 'My leave', icon: 'calendar', permission: 'leave:request', feature: 'leave' },
+          { href: '/leave/apply', label: 'Apply for leave', icon: 'plane', permission: 'leave:request', feature: 'leave', keywords: 'apply leave half day hourly' },
+          // Any of the leave jobs opens it: an HR Workspace the Super Workspace allowed to create leave types, assign
+          // or assign quantities finds Leave management even without the calendars and reports switch.
+          { href: '/leave/manage', label: 'Leave administration', icon: 'sliders', anyPermission: ['leave:allocate', 'leave:assign', 'leavetypes:create'], feature: 'leave' },
+          { href: '/leave/balances', label: 'Leave balances', icon: 'calendar-range', permission: 'leave:approve', feature: 'leave' },
+        ],
+      },
+      {
+        href: '', label: 'My Approvals', icon: 'inbox', children: [
+          { href: '/requests/approvals', label: 'Requests & leave', icon: 'inbox', keywords: 'approve reject request changes pending my approval' },
+          { href: '/approvals', label: 'All approvals', icon: 'check', keywords: 'expenses documents profile updates payroll approvals' },
+        ],
+      },
+      { href: '/requests/mine', label: 'My Requests', icon: 'list-checks', keywords: 'my requests status pending approved rejected' },
+      { href: '/employees', label: 'Employees', icon: 'contact', permission: 'employees:read', beyondOwn: true },
+      {
+        href: '', label: 'Reports', icon: 'chart', children: [
+          { href: '/insights', label: 'HR analytics', icon: 'chart', permission: 'employees:read', beyondOwn: true },
+          { href: '/insights/universe', label: 'Workforce Universe', icon: 'orbit', permission: 'employees:read', beyondOwn: true, feature: 'workforce_universe' },
+          { href: '/insights/attrition', label: 'Attrition risk', icon: 'trending-down', permission: 'insights:attrition', feature: 'workforce_analytics' },
+        ],
+      },
+      // SampCrew Chat (Communication): chat, emails from HR and help requests (Ask HR cases, the queue for HR).
+      { href: '/communication', label: 'SampCrew Chat', icon: 'messages-square', permission: 'helpdesk:use', feature: 'helpdesk', keywords: 'communication chat messages' },
+      SETTINGS,
+    ],
+  },
+  {
     label: 'Workspace',
     items: [
-      { href: '/', label: 'Home', icon: 'home' },
-      // Requests (28 November 2026): work from home, early leave, late coming, comp off, leave ... at every level.
-      { href: '/requests', label: 'Requests', icon: 'send', keywords: 'wfh work from home early leave late coming comp off half day on duty raise request' },
-      { href: '/approvals', label: 'Approvals', icon: 'inbox' },
       { href: '/tasks', label: 'My tasks', icon: 'list-checks' },
-      // Communication replaces Ask HR: chat, emails from HR and help requests (Ask HR cases, the queue for HR).
-      { href: '/communication', label: 'Communication', icon: 'messages-square', permission: 'helpdesk:use', feature: 'helpdesk' },
       { href: '/announcements', label: 'Announcements', icon: 'megaphone', permission: 'announcements:read', feature: 'announcements' },
       { href: '/documents', label: 'Documents', icon: 'file-stack', permission: 'documents:read', feature: 'documents' },
       { href: '/notifications', label: 'Notifications', icon: 'bell' },
@@ -70,8 +154,6 @@ export const NAV: NavGroup[] = [
   {
     label: 'My work',
     items: [
-      { href: '/attendance', label: 'Attendance', icon: 'clock', permission: 'attendance:punch', feature: 'attendance_basic' },
-      { href: '/leave', label: 'Leave', icon: 'calendar', permission: 'leave:request', feature: 'leave' },
       { href: '/payslips', label: 'Payslips', icon: 'file-text', permission: 'payslips:read', feature: 'payroll' },
       { href: '/expenses', label: 'Expenses', icon: 'receipt', permission: 'expenses:submit', feature: 'expenses' },
       { href: '/appraisal', label: 'Appraisal', icon: 'award', permission: 'performance:read', feature: 'performance' },
@@ -84,7 +166,6 @@ export const NAV: NavGroup[] = [
   {
     label: 'Employee management',
     items: [
-      { href: '/employees', label: 'Employees', icon: 'contact', permission: 'employees:read', beyondOwn: true },
       { href: '/people', label: 'Logins & access', icon: 'users', permission: 'users:read', beyondOwn: true },
       {
         href: '', label: 'Organization', icon: 'network', children: [
@@ -119,14 +200,6 @@ export const NAV: NavGroup[] = [
         ],
       },
       { href: '/shifts', label: 'Shifts', icon: 'calendar-clock', permission: 'shifts:read', feature: 'shift_scheduling' },
-      {
-        href: '', label: 'Leave administration', icon: 'sliders', children: [
-          // Any of the leave jobs opens it: an HR Workspace the Super Workspace allowed to create leave types, assign
-          // or assign quantities finds Leave management even without the calendars and reports switch.
-          { href: '/leave/manage', label: 'Leave management', icon: 'sliders', anyPermission: ['leave:allocate', 'leave:assign', 'leavetypes:create'], feature: 'leave' },
-          { href: '/leave/balances', label: 'Leave balances', icon: 'calendar-range', permission: 'leave:approve', feature: 'leave' },
-        ],
-      },
     ],
   },
   {
@@ -188,15 +261,8 @@ export const NAV: NavGroup[] = [
     ],
   },
   {
-    label: 'Analytics & AI',
+    label: 'AI & automation',
     items: [
-      {
-        href: '', label: 'Analytics', icon: 'chart', children: [
-          { href: '/insights', label: 'HR analytics', icon: 'chart', permission: 'employees:read', beyondOwn: true },
-          { href: '/insights/universe', label: 'Workforce Universe', icon: 'orbit', permission: 'employees:read', beyondOwn: true, feature: 'workforce_universe' },
-          { href: '/insights/attrition', label: 'Attrition risk', icon: 'trending-down', permission: 'insights:attrition', feature: 'workforce_analytics' },
-        ],
-      },
       {
         href: '', label: 'Automation', icon: 'workflow', children: [
           { href: '/automation', label: 'Automation Studio', icon: 'workflow', permission: 'automation:manage', feature: 'automation' },
@@ -210,59 +276,6 @@ export const NAV: NavGroup[] = [
     items: [
       { href: '/privacy', label: 'Privacy requests', icon: 'user-x', permission: 'privacy:manage' },
       { href: '/settings/audit', label: 'Audit trail', icon: 'scroll', permission: 'audit:read' },
-    ],
-  },
-  {
-    // One Settings for everything (28 November 2026): the hub, and every settings page under it.
-    label: 'Administration',
-    items: [
-      {
-        href: '/settings', label: 'Settings', icon: 'settings', ownPage: true, keywords: 'all settings configuration', children: [
-          // Workspace
-          { href: '/settings/workspace', label: 'Workspace settings', icon: 'settings', permission: 'tenant:read' },
-          { href: '/settings/workspace-permissions', label: 'Workspace Permissions', icon: 'shield-check', permission: 'hierarchy:read', adminOnly: true },
-          { href: '/settings/hr-admin', label: 'Super Workspace Admin', icon: 'layout-grid', permission: 'tenant:read' },
-          { href: '/settings/roles', label: 'Access levels', icon: 'shield', permission: 'roles:read' },
-          { href: '/settings/approvals', label: 'Approval settings', icon: 'inbox', permission: 'org:manage' },
-          { href: '/settings/billing', label: 'Plan & billing', icon: 'credit-card', permission: 'billing:read' },
-          { href: '/settings/mobile-app', label: 'Mobile app', icon: 'smartphone', permission: 'mobileapp:manage', superOnly: true },
-          { href: '/settings/notifications/organisation', label: 'Notification policy', icon: 'bell', superOnly: true },
-          { href: '/settings/email', label: 'Email setup', icon: 'mail', permission: 'mail:configure', keywords: 'smtp mail server outgoing email invitation verification password reset' },
-          { href: '/settings/email-templates', label: 'Email templates', icon: 'mail', permission: 'mail:configure', keywords: 'email template html design branding import company layout' },
-          { href: '/settings/support', label: 'Support access', icon: 'life-buoy', permission: 'tenant:read' },
-          // People and organization
-          { href: '/settings/master-data', label: 'Master data', icon: 'list-tree', permission: 'org:read' },
-          { href: '/settings/forms', label: 'Form management', icon: 'text-cursor-input', permission: 'fields:manage', keywords: 'forms fields custom fields extra fields add employee form employee profile leave request work email domain required hidden labels placeholder configuration' },
-          { href: '/settings/onboarding', label: 'Onboarding checklists', icon: 'list-checks', permission: 'employees:create', feature: 'onboarding' },
-          { href: '/settings/onboarding-documents', label: 'Onboarding document library', icon: 'clipboard-list', permission: 'documents:read', feature: 'documents', adminOnly: true, keywords: 'onboarding documents library templates categories mandatory optional' },
-          // Leave and attendance
-          { href: '/settings/leave', label: 'Holidays and leave rules', icon: 'calendar-range', permission: 'leave:allocate', feature: 'leave' },
-          { href: '/settings/attendance', label: 'Attendance settings', icon: 'timer', permission: 'attendance:configure', feature: 'attendance_basic' },
-          { href: '/attendance/offices', label: 'Office locations', icon: 'map-pin', permission: 'attendance:configure', feature: 'attendance_basic' },
-          { href: '/attendance/work-mode/settings', label: 'Office and home rules', icon: 'sliders', permission: 'attendance:configure', feature: 'attendance_basic' },
-          { href: '/settings/attendance-access', label: 'Attendance permissions', icon: 'shield-check', permission: 'hierarchy:manage', feature: 'attendance_basic', superOnly: true },
-          { href: '/settings/devices', label: 'Attendance devices', icon: 'fingerprint', permission: 'devices:manage', feature: 'attendance_advanced' },
-          // Modules
-          { href: '/settings/payroll', label: 'Payroll settings', icon: 'landmark', permission: 'payroll:configure', feature: 'payroll' },
-          { href: '/settings/appraisals', label: 'Appraisal forms & cycles', icon: 'award', permission: 'performance:configure', feature: 'performance' },
-          { href: '/settings/recruitment', label: 'Recruitment settings', icon: 'sliders', permission: 'recruitment:configure', feature: 'recruitment' },
-          { href: '/settings/helpdesk', label: 'Helpdesk settings', icon: 'life-buoy', permission: 'helpdesk:configure', feature: 'helpdesk' },
-          { href: '/settings/document-access', label: 'Document access', icon: 'lock-keyhole', permission: 'documents:manage', feature: 'documents', superOnly: true },
-          { href: '/settings/ai', label: 'AI settings', icon: 'sparkles', permission: 'ai:configure', feature: 'ai_copilot' },
-          { href: '/settings/ai/activity', label: 'AI activity', icon: 'bot', permission: 'audit:read', feature: 'ai_copilot' },
-          // Security
-          { href: '/settings/single-sign-on', label: 'Single sign-on', icon: 'lock-keyhole', permission: 'security:manage', feature: 'sso' },
-          { href: '/settings/integrations', label: 'Integrations', icon: 'plug', permission: 'integrations:manage', feature: 'integrations_advanced' },
-          { href: '/settings/password-resets', label: 'Password resets', icon: 'key', permission: 'users:read', superOnly: true },
-          // Your account
-          { href: '/settings/home', label: 'Home dashboard', icon: 'layout-grid', adminOnly: true, keywords: 'dashboard cards counts widgets home page setup' },
-          { href: '/settings/notifications', label: 'Notification settings', icon: 'bell' },
-          { href: '/settings/appearance', label: 'Appearance', icon: 'palette' },
-          { href: '/settings/signature', label: 'Email signature', icon: 'mail', feature: 'email_signatures' },
-          { href: '/settings/security', label: 'Security', icon: 'key' },
-          { href: '/activity', label: 'Activity log', icon: 'history', keywords: 'login sign in ip location sessions access audit what I did' },
-        ],
-      },
     ],
   },
 ];
@@ -283,7 +296,8 @@ export function quickActions(me: Me): QuickAction[] {
   if (has('users:invite')) out.push({ key: 'invite', label: 'Invite a colleague', href: '/people?create=invite', icon: 'users', keywords: 'login access' });
   if (has('requisitions:create', 'recruitment')) out.push({ key: 'requisition', label: 'Create job requisition', href: '/recruitment?create=requisition', icon: 'briefcase', keywords: 'job opening hiring position' });
   if (has('bids:manage', 'staffing_bids')) out.push({ key: 'bid', label: 'Create staffing bid', href: '/staffing/bids/new?mode=quick', icon: 'handshake', keywords: 'proposal quote client staffing rate margin' });
-  if (has('leave:request', 'leave')) out.push({ key: 'leave', label: 'Request time off', href: '/leave?create=leave', icon: 'calendar', keywords: 'leave holiday vacation apply' });
+  if (has('leave:request', 'leave')) out.push({ key: 'leave', label: 'Apply for leave', href: '/leave/apply', icon: 'calendar', keywords: 'leave holiday vacation apply time off' });
+  out.push({ key: 'request', label: 'Create a request', href: '/requests/new', icon: 'send', keywords: 'wfh work from home late early comp off regularization request' });
   if (has('performance:read', 'performance')) out.push({ key: 'goal', label: 'Set a goal', href: '/goals?create=goal', icon: 'target', keywords: 'okr objective' });
   if (has('expenses:submit', 'expenses')) out.push({ key: 'expense', label: 'Claim an expense', href: '/expenses', icon: 'receipt', keywords: 'reimbursement receipt' });
   if (has('helpdesk:use', 'helpdesk') && !me.permissions['helpdesk:manage']) out.push({ key: 'ask', label: 'Ask HR a question', href: '/helpdesk', icon: 'life-buoy', keywords: 'helpdesk case ticket' });
@@ -293,7 +307,7 @@ export function quickActions(me: Me): QuickAction[] {
 /** Palette-only shortcuts to common workflows. */
 export function workflowActions(me: Me): QuickAction[] {
   const has = (p: string, f?: string) => Boolean(me.permissions[p]) && (!f || me.features.includes(f));
-  const out: QuickAction[] = [{ key: 'approve', label: 'Approve requests', href: '/approvals', icon: 'inbox', keywords: 'approve leave approvals inbox' }];
+  const out: QuickAction[] = [{ key: 'approve', label: 'Approve requests', href: '/requests/approvals', icon: 'inbox', keywords: 'approve leave approvals inbox' }];
   if (has('candidates:read', 'recruitment')) out.push({ key: 'find-candidate', label: 'Find candidate', href: '/recruitment/candidates', icon: 'user-search', keywords: 'search applicant' });
   if (has('payroll:read', 'payroll')) out.push({ key: 'payroll', label: 'Open payroll', href: '/payroll', icon: 'wallet', keywords: 'pay run salary' });
   if (has('attendance:approve', 'attendance_basic') && isAdminLevel(me)) out.push({ key: 'exceptions', label: 'Review attendance exceptions', href: '/attendance/team?status=missing_punch', icon: 'users-round', keywords: 'missing punch late absent' });
@@ -321,7 +335,7 @@ export function accountLinks(me: Pick<Me, 'employee'>): { key: string; label: st
  * they switch back to My Workforce.
  */
 export const MY_DAY_HREFS: ReadonlySet<string> = new Set([
-  '/', '/requests', '/approvals', '/settings', '/tasks', '/announcements', '/communication', '/help', '/attendance', '/leave', '/payslips', '/expenses', '/appraisal', '/assets/mine',
+  '/', '/my-day', '/requests', '/requests/mine', '/requests/approvals', '/requests/new', '/leave/apply', '/approvals', '/settings', '/tasks', '/announcements', '/communication', '/help', '/attendance', '/leave', '/payslips', '/expenses', '/appraisal', '/assets/mine',
   '/goals', '/learning', '/onboarding-documents/mine', '/recognition', '/surveys', '/notifications', '/activity', '/settings/notifications', '/settings/appearance', '/settings/signature',
   '/settings/security', '/settings/home', '/profile',
 ]);

@@ -119,7 +119,8 @@ const leaveDay = () => {
 
   // 4. Same-day leave, penalised by the supervisor while approving.
   await neha.goto(BASE + '/leave');
-  await neha.getByRole('button', { name: 'Apply for leave', exact: true }).click();
+  // The full Apply for leave page is a request (requests-flow); the quick dialog on Leave still files leave directly.
+  await neha.getByRole('button', { name: 'Quick apply', exact: true }).click();
   const day = leaveDay();
   const form = neha.locator('#leave-form');
   await form.locator('input[name=startDate]').fill(day);

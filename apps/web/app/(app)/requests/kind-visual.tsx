@@ -1,10 +1,11 @@
 import type { RequestKind } from '@crew/contracts';
 import { REQUEST_KIND_DEFS } from '@crew/contracts';
 import { cn } from '@crew/ui';
-import { AlarmClock, Briefcase, CalendarPlus, Clock, House, LogOut, MessageSquarePlus, Plane, Repeat, type LucideIcon } from 'lucide-react';
+import { AlarmClock, Briefcase, CalendarPlus, CalendarX, Clock, House, LogOut, MessageSquarePlus, Plane, Repeat, type LucideIcon } from 'lucide-react';
 
 export const KIND_ICONS: Record<RequestKind, LucideIcon> = {
-  wfh: House, early_leave: LogOut, late_coming: AlarmClock, comp_off: CalendarPlus, leave: Plane, half_day: Clock, on_duty: Briefcase, shift_change: Repeat, other: MessageSquarePlus,
+  wfh: House, early_leave: LogOut, late_coming: AlarmClock, comp_off: CalendarPlus, leave: Plane, attendance_regularization: Clock, on_duty: Briefcase, shift_change: Repeat,
+  other: MessageSquarePlus, leave_cancellation: CalendarX,
 };
 
 /**
@@ -12,8 +13,8 @@ export const KIND_ICONS: Record<RequestKind, LucideIcon> = {
  * shadow), the same on every screen that shows requests.
  */
 export function KindTile({ kind, size = 'md', className }: { kind: RequestKind; size?: 'sm' | 'md' | 'lg'; className?: string }) {
-  const Icon = KIND_ICONS[kind];
-  const color = REQUEST_KIND_DEFS[kind].color;
+  const Icon = KIND_ICONS[kind] ?? Plane;
+  const color = REQUEST_KIND_DEFS[kind]?.color ?? '#2563eb';
   const box = size === 'lg' ? 'size-14 rounded-2xl' : size === 'sm' ? 'size-8 rounded-lg' : 'size-11 rounded-xl';
   const icon = size === 'lg' ? 'size-7' : size === 'sm' ? 'size-4' : 'size-5';
   return (
@@ -67,10 +68,12 @@ export function RequestsIllustration({ className }: { className?: string }) {
 
 const STATUS: Record<string, { label: string; cls: string }> = {
   pending: { label: 'Pending', cls: 'bg-warning-subtle text-warning ring-warning/30' },
+  changes_requested: { label: 'Changes requested', cls: 'bg-info-subtle text-info ring-info/30' },
+  not_needed: { label: 'Not needed', cls: 'bg-bg-subtle text-fg-muted ring-border' },
   approved: { label: 'Approved', cls: 'bg-success-subtle text-success ring-success/30' },
   rejected: { label: 'Rejected', cls: 'bg-danger-subtle text-danger ring-danger/30' },
   cancelled: { label: 'Cancelled', cls: 'bg-bg-subtle text-fg-muted ring-border' },
-  waiting: { label: 'Not reached', cls: 'bg-bg-subtle text-fg-muted ring-border' },
+  waiting: { label: 'Waiting for turn', cls: 'bg-bg-subtle text-fg-muted ring-border' },
 };
 
 export function StatusChip({ status, className }: { status: string; className?: string }) {

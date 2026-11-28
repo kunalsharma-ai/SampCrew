@@ -987,7 +987,9 @@ export const TABLES: Record<string, TableSpec> = {
       requested_by_membership_id: {"type": "uuid"},
       resource_id: {"required": true, "type": "uuid"},
       resource_type: {"required": true, "type": "string"},
-      status: {"default": "pending", "enum": ["pending", "approved", "rejected", "cancelled"], "required": true, "type": "string"},
+      status: {"default": "pending", "enum": ["pending", "approved", "rejected", "cancelled", "changes_requested"], "required": true, "type": "string"},
+      // Requests: "any" means one approver of a stage is enough (the others are skipped); absent or "all": every step.
+      mode: {"enum": ["any", "all"], "type": "string"},
       subject_employee_id: {"type": "uuid"},
       summary: {"required": true, "type": "string"},
       // Facts the approvals page groups by (leave type code, half day, expense category), set by the owning module.
@@ -1035,7 +1037,7 @@ export const TABLES: Record<string, TableSpec> = {
       // Steps with the same stage are decided at the same time (any order); the next stage starts when all are approved.
       // Absent on steps made before parallel stages: their stage is their seq.
       stage: {"type": "int"},
-      status: {"enum": ["waiting", "pending", "approved", "rejected", "skipped", "cancelled"], "required": true, "type": "string"},
+      status: {"enum": ["waiting", "pending", "approved", "rejected", "skipped", "cancelled", "changes_requested"], "required": true, "type": "string"},
       tenant_id: {"required": true, "type": "uuid"},
     },
     unique: [
@@ -5421,8 +5423,12 @@ export const TABLES: Record<string, TableSpec> = {
       reason: {"type": "string"},
       // A change to approved leave is a new request; approving it cancels the one it replaces.
       replaces_request_id: {"type": "uuid"},
-      // The approved request (Requests section) this leave application was made from; its looped people approve it.
+      // The request (Requests section) this leave was applied with: its approvers decide it, through the request.
       staff_request_id: {"type": "uuid"},
+      // Hourly leave: the hours away on that one day (days is the share of a working day).
+      start_time: {"type": "string"},
+      end_time: {"type": "string"},
+      hours: {"scale": 2, "type": "decimal"},
       // The leave application form as it was sent: employee code, name, designation, manager, HR, contact, handover.
       application_form: {"type": "json"},
       requested_by_membership_id: {"type": "uuid"},
@@ -5724,6 +5730,26 @@ export const TABLES: Record<string, TableSpec> = {
       "CHECK ((jsonb_typeof(dashboard) = 'object'::text))",
       "CHECK ((length(notes) <= 4000))",
     ],
+  },
+  member_presence: {
+    // When each member last had SampCrew open (28 November 2026, online status in the chat). The live stream stamps it
+    // when it opens and on every heartbeat; a stamp older than about a minute means offline. One row per member.
+    access: "tenant", grants: ["insert", "select", "update"],
+    columns: {
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      tenant_id: {"required": true, "type": "uuid"},
+      membership_id: {"required": true, "type": "uuid"},
+      seen_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "member_presence_pkey", "primary": true},
+      {"cols": [{"col": "tenant_id"}, {"col": "membership_id"}], "name": "member_presence_member_key"},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+    ],
+    indexes: [],
+    checks: [],
   },
   memberships: {
     access: "tenant_or_user", grants: ["delete", "insert", "select", "update"], touch: true, triggers: ["memberships_no_manager_cycle", "workspace_limit_employee"],
@@ -9558,14 +9584,18 @@ export const TABLES: Record<string, TableSpec> = {
     checks: [],
   },
   staff_requests: {
-    // A request raised in the Requests section (28 November 2026) by anyone at any level: work from home, early
-    // leave, late coming, comp off, leave, half day, on duty, shift change or other. It goes to the people the
-    // requester looped in (approval_steps of kind person, all in one stage); each decides with a comment.
+    // A request raised in the Requests section (28 November 2026) by anyone at any level: work from home, leave, early
+    // leave, late arrival, comp off, attendance regularization, other (or a category the Super Workspace added). It
+    // goes to a primary approver and additional approvers (approval_steps of kind person: at once, any one, or in
+    // order, as the category's workflow says) and tells the CC participants. One record whatever the approvers'
+    // workspaces; an approver asking for changes sends it back, and the corrected request starts a new round.
     access: "tenant", grants: ["insert", "select", "update"], touch: true,
     columns: {
       id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
       tenant_id: {"required": true, "type": "uuid"},
-      kind: {"enum": ["wfh", "early_leave", "late_coming", "comp_off", "leave", "half_day", "on_duty", "shift_change", "other"], "required": true, "type": "string"},
+      kind: {"enum": ["wfh", "leave", "early_leave", "late_coming", "comp_off", "attendance_regularization", "on_duty", "shift_change", "other", "leave_cancellation", "half_day"], "required": true, "type": "string"},
+      // The category on the Request settings page (a built-in kind, or one the Super Workspace added).
+      category_key: {"type": "string"},
       title: {"type": "string"},
       reason: {"required": true, "type": "string"},
       start_date: {"required": true, "type": "date"},
@@ -9577,10 +9607,24 @@ export const TABLES: Record<string, TableSpec> = {
       requester_membership_id: {"required": true, "type": "uuid"},
       // The requester's employee record, when they have one (attendance and leave use it).
       employee_id: {"type": "uuid"},
+      // The approvers in order: the primary approver first, then the additional approvers.
       approver_membership_ids: {"default": {"json": []}, "required": true, "type": "uuid[]"},
-      status: {"default": "pending", "enum": ["pending", "approved", "rejected", "cancelled"], "required": true, "type": "string"},
+      // People told about the request and its decisions, who do not decide.
+      cc_membership_ids: {"default": {"json": []}, "required": true, "type": "uuid[]"},
+      workflow: {"default": "all", "enum": ["any", "all", "sequential"], "required": true, "type": "string"},
+      // Supporting documents (comm_files ids).
+      attachment_ids: {"default": {"json": []}, "required": true, "type": "uuid[]"},
+      status: {"default": "pending", "enum": ["pending", "changes_requested", "approved", "rejected", "cancelled"], "required": true, "type": "string"},
+      // The current round's approval; every round's approval, oldest first.
       approval_request_id: {"type": "uuid"},
+      approval_ids: {"default": {"json": []}, "required": true, "type": "uuid[]"},
+      round: {"default": 1, "required": true, "type": "int"},
+      // Leave: the leave request booked with it (pending until approved). Leave cancellation: the leave it cancels.
       leave_request_id: {"type": "uuid"},
+      // Leave: the application form details (duration, halves, hours, contact, handover).
+      leave_details: {"type": "json"},
+      // Approvers were reminded that it starts soon (Request settings: reminder days).
+      reminded_at: {"type": "timestamp"},
       decided_at: {"type": "timestamp"},
       cancelled_at: {"type": "timestamp"},
       cancel_reason: {"type": "string"},
@@ -9597,7 +9641,56 @@ export const TABLES: Record<string, TableSpec> = {
     indexes: [
       {"cols": [{"col": "tenant_id"}, {"col": "requester_membership_id"}, {"col": "created_at", "desc": true}], "name": "staff_requests_by_requester"},
       {"cols": [{"col": "tenant_id"}, {"col": "employee_id"}, {"col": "kind"}, {"col": "status"}, {"col": "start_date"}], "name": "staff_requests_by_employee_day"},
+      {"cols": [{"col": "tenant_id"}, {"col": "approver_membership_ids"}, {"col": "status"}], "name": "staff_requests_by_approver"},
+      {"cols": [{"col": "tenant_id"}, {"col": "cc_membership_ids"}], "name": "staff_requests_by_cc"},
     ],
+    checks: [],
+  },
+  staff_request_events: {
+    // The history of a request (28 November 2026): submitted, each approver's decision, changes asked, corrected,
+    // comments, reminders, cancelled. Never changed afterwards.
+    access: "tenant", grants: ["insert", "select"],
+    columns: {
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      tenant_id: {"required": true, "type": "uuid"},
+      request_id: {"required": true, "type": "uuid"},
+      action: {"enum": ["submitted", "approved", "rejected", "changes_requested", "resubmitted", "commented", "cancelled", "completed", "reminded", "cancellation_requested"], "required": true, "type": "string"},
+      membership_id: {"type": "uuid"},
+      comment: {"type": "string"},
+      round: {"type": "int"},
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "staff_request_events_pkey", "primary": true},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+    ],
+    indexes: [
+      {"cols": [{"col": "tenant_id"}, {"col": "request_id"}, {"col": "created_at"}], "name": "staff_request_events_by_request"},
+    ],
+    checks: [],
+  },
+  request_settings: {
+    // The Request settings page (one row per workspace): categories, their workflow, attachments and levels; how
+    // approved leave is cancelled; reminders; default approvers.
+    access: "tenant", grants: ["insert", "select", "update"], touch: true,
+    columns: {
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      tenant_id: {"required": true, "type": "uuid"},
+      settings: {"required": true, "type": "json"},
+      updated_by_membership_id: {"type": "uuid"},
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "request_settings_pkey", "primary": true},
+      {"cols": [{"col": "tenant_id"}], "name": "request_settings_tenant"},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+    ],
+    indexes: [],
     checks: [],
   },
 };

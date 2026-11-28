@@ -60,7 +60,7 @@ export default async function LeavePage({ searchParams }: { searchParams: Promis
     <>
       <PageHeader title="Leave" description={`Your balances for ${balances.year}, your leave types and their rules, your leave calendar and applications.`} actions={can(me, 'leave:request') && <ApplyLeave balances={balances.balances} />} />
       <ModuleOverview module="leave" actions={allowed(me, [
-        { label: 'Apply leave', href: '/leave?create=leave', icon: 'calendar', permission: 'leave:request' },
+        { label: 'Apply leave', href: '/leave/apply', icon: 'calendar', permission: 'leave:request' },
         { label: 'Approve requests', href: '/approvals', icon: 'check', permission: 'leave:approve' },
         { label: 'Team balances', href: '/leave/balances', icon: 'users-round', permission: 'leave:approve' },
         { label: 'Team attendance', href: '/attendance/team?status=on_leave', icon: 'users-round', permission: 'attendance:approve', feature: 'attendance_basic' },

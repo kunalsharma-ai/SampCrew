@@ -7,6 +7,7 @@ import { requestContext } from '../../platform/context/request-context';
 import { ilike, MongoService as DatabaseService, type TenantTx } from '../../platform/database/mongo.service';
 import { Errors } from '../../platform/http/errors';
 import { NotificationService } from '../../platform/notify/notification.service';
+import { onlineMembers } from '../../platform/notify/presence';
 import { memberNames } from '../employees/employee-view';
 import { CURRENT_STATUSES } from './audience';
 import { memberIdentities, storedIdentity } from './identity';
@@ -122,6 +123,7 @@ export class ChatService {
     const members = await tx.collection('chat_members').find({ conversation_id: { $in: ids }, left_at: null }, { projection: { conversation_id: 1, membership_id: 1, role: 1, muted: 1, last_read_at: 1 } });
     const names = await memberNames(tx, [...members.map((m) => m.membership_id), ...convs.map((c) => c.employee_membership_id), ...convs.map((c) => c.last_message?.senderMembershipId)]);
     const who = await memberIdentities(tx, [...members.map((m) => m.membership_id), ...convs.map((c) => c.employee_membership_id)]);
+    const online = await onlineMembers(tx, [...members.filter((m) => m.membership_id !== s.membershipId).map((m) => m.membership_id), ...convs.map((c) => c.employee_membership_id)]);
     const deptNames = new Map((await tx.collection('departments').find({ id: { $in: convs.map((c) => c.department_id).filter(Boolean) } }, { projection: { name: 1 } })).map((d) => [d.id as string, d.name as string]));
     const out: ConversationView[] = [];
     for (const c of convs) {
@@ -134,17 +136,19 @@ export class ChatService {
       let title = c.title as string;
       let subtitle: string | null = null;
       let counterpart: ConversationView['counterpart'] = null;
+      let counterpartId: string | undefined;
       const line = (id: string | undefined) => { const i = id ? who.get(id) : undefined; return i ? (i.workspace ? `${i.levelLabel} · ${i.workspace}` : i.levelLabel) : null; };
       const plain = (id: string | undefined) => { const i = id ? who.get(id) : undefined; return i ? { name: i.name, level: i.level, levelLabel: i.levelLabel, workspace: i.workspace } : null; };
       if (c.kind === 'direct') {
         const other = people.find((m) => m.membership_id !== s.membershipId);
         title = (other && names.get(other.membership_id)) || 'Former colleague';
         counterpart = plain(other?.membership_id);
+        counterpartId = other?.membership_id;
         subtitle = line(other?.membership_id) ?? 'Direct message';
       } else if (c.kind === 'hr') {
         const asEmployee = c.employee_membership_id === s.membershipId;
         title = asEmployee ? 'HR team' : names.get(c.employee_membership_id) ?? 'Employee';
-        if (!asEmployee) counterpart = plain(c.employee_membership_id);
+        if (!asEmployee) { counterpart = plain(c.employee_membership_id); counterpartId = c.employee_membership_id; }
         subtitle = asEmployee ? 'Your conversation with HR' : `Message to HR · ${line(c.employee_membership_id) ?? 'Employee Workspace'}`;
       } else if (c.kind === 'department') {
         title = title || deptNames.get(c.department_id) || 'Department';
@@ -154,6 +158,7 @@ export class ChatService {
         id: c.id, kind: c.kind, title, subtitle, memberCount: people.length,
         members: people.map((m) => ({ membershipId: m.membership_id, name: names.get(m.membership_id) ?? null, identity: plain(m.membership_id) })),
         counterpart,
+        online: counterpartId ? online.has(counterpartId) : people.some((m) => m.membership_id !== s.membershipId && online.has(m.membership_id)),
         lastMessage: c.last_message ? { body: c.last_message.body, senderName: c.last_message.senderMembershipId ? names.get(c.last_message.senderMembershipId) ?? null : null, at: iso(c.last_message.at)! } : null,
         unread, muted: !!mine?.muted,
         canManage: c.kind === 'group' ? mine?.role === 'owner' : c.kind === 'department' ? this.isHr(s) : false,
@@ -635,6 +640,7 @@ export class ChatService {
         tx.collection('departments').find({}, { projection: { name: 1 } }),
         tx.collection('designations').find({}, { projection: { name: 1 } }),
       ]);
+      const online = await onlineMembers(tx, members.map((m) => m.id as string));
       const dn = new Map(depts.map((d) => [d.id as string, d.name as string]));
       const gn = new Map(desigs.map((d) => [d.id as string, d.name as string]));
       const needle = q?.toLowerCase();
@@ -648,6 +654,7 @@ export class ChatService {
               level: i?.level ?? 'employee', levelLabel: i?.levelLabel ?? 'Employee Workspace', workspace: i?.workspace ?? null,
               employeeCode: i?.employeeCode ?? null, email: i?.email ?? null,
               department: e ? dn.get(e.current_department_id) ?? null : null, designation: e ? gn.get(e.current_designation_id) ?? null : null,
+              online: online.has(m.id as string),
             };
           })
           .filter((p) => !needle || [p.name, p.department, p.designation, p.email, p.employeeCode, p.workspace, p.levelLabel].some((f) => (f ?? '').toLowerCase().includes(needle)))

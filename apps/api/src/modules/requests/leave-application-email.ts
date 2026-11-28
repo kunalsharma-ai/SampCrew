@@ -1,4 +1,4 @@
-import { requestDateLabel } from '@crew/contracts';
+import { requestDateLabel, requestTimeLabel } from '@crew/contracts';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 const esc = (v: unknown) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
@@ -11,18 +11,22 @@ const half = (h: string, end: boolean) => (h === 'full' ? '' : end ? ' (first ha
 export function leaveApplicationEmail(p: { form: Record<string, any>; days: string; reference: string; link: string; recipientName: string; copy: boolean }) {
   const f = p.form;
   const a = f.applicant ?? {};
-  const from = `${requestDateLabel(f.startDate)}${half(f.startHalf, false)}`;
-  const to = `${requestDateLabel(f.endDate)}${half(f.endHalf, true)}`;
+  const hours = f.duration === 'hours' && f.startTime && f.endTime;
+  const from = `${requestDateLabel(f.startDate)}${hours ? `, ${requestTimeLabel(f.startTime)}` : half(f.startHalf, false)}`;
+  const to = `${requestDateLabel(f.endDate)}${hours ? `, ${requestTimeLabel(f.endTime)}` : half(f.endHalf, true)}`;
+  const duration = f.duration === 'hours' ? 'Hours' : f.duration === 'half' ? 'Half day' : 'Full day';
   const subject = `${p.copy ? 'Copy: ' : ''}Leave application ${p.reference}: ${a.name} (${a.employeeCode ?? 'no code'}), ${f.leaveType?.name}, ${p.days} day${p.days === '1' ? '' : 's'}`;
   const rows: [string, unknown][] = [
     ['Employee name', a.name], ['Employee code', a.employeeCode ?? '—'], ['Designation', a.designation ?? '—'], ['Department', a.department ?? '—'],
     ['Workspace', [a.levelLabel, a.workspace].filter(Boolean).join(', ')], ['Reporting manager', f.reportingManager?.name ?? '—'], ['HR manager', f.hrManager?.name ?? '—'],
   ];
   const leaveRows: [string, unknown][] = [
-    ['Leave type', f.leaveType?.name], ['From', from], ['To', to], ['Number of days', p.days], ['Reason', f.reason],
+    ['Leave type', f.leaveType?.name], ['Duration', duration], ['From', from], ['To', to], ['Number of days', p.days], ['Reason', f.reason],
     ...(f.contactDuringLeave ? [['Contact during leave', f.contactDuringLeave] as [string, unknown]] : []),
     ...(f.handoverTo ? [['Work handed over to', f.handoverTo] as [string, unknown]] : []),
-    ['Pre-approved request', f.requestRef],
+    ['Request ID', f.requestRef],
+    ['Approvers', ((f.sendTo ?? []) as { name: string; part?: string }[]).map((x) => `${x.name}${x.part === 'primary' ? ' (primary)' : ''}`).join(', ') || '—'],
+    ...((f.cc ?? []).length ? [['CC', (f.cc as { name: string }[]).map((x) => x.name).join(', ')] as [string, unknown]] : []),
   ];
   const table = (title: string, r: [string, unknown][]) => `
     <tr><td style="padding:18px 28px 6px;font:600 12px/1.4 Arial,sans-serif;letter-spacing:.08em;text-transform:uppercase;color:#4f46e5">${esc(title)}</td></tr>
@@ -40,7 +44,7 @@ export function leaveApplicationEmail(p: { form: Record<string, any>; days: stri
     </td></tr>
     <tr><td style="padding:20px 28px 0;font:14px/1.6 Arial,sans-serif;color:#374151">${p.copy
       ? `Dear ${esc(p.recipientName)}, this is your copy of the leave application you submitted. It is waiting for the approvers below.`
-      : `Dear ${esc(p.recipientName)}, ${esc(a.name)} has applied for leave. The request for these days was approved earlier; please review the application and approve or reject it in SampCrew.`}</td></tr>
+      : `Dear ${esc(p.recipientName)}, ${esc(a.name)} has applied for leave and named you as an approver. Please review the application and approve, reject or ask for changes in SampCrew.`}</td></tr>
     ${table('Employee details', rows)}
     ${table('Leave details', leaveRows)}
     ${approvals.length ? `<tr><td style="padding:18px 28px 6px;font:600 12px/1.4 Arial,sans-serif;letter-spacing:.08em;text-transform:uppercase;color:#4f46e5">Request approved by</td></tr>

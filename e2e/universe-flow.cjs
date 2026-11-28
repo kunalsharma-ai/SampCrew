@@ -52,10 +52,10 @@ const expect = (cond, msg) => { if (!cond) throw new Error(msg); };
 
     // 1. Headcount adds up.
     await p.goto(BASE + '/employees');
-    // Workforce Universe sits under Analytics in the shorter menu: open it first when it is closed.
+    // Workforce Universe sits under Reports in the shorter menu: open it first when it is closed.
     const mainNav = p.getByRole('navigation', { name: 'Main' });
     const universeLink = mainNav.getByRole('link', { name: 'Workforce Universe' });
-    if (!(await universeLink.isVisible())) await mainNav.getByRole('button', { name: 'Analytics', exact: true }).click();
+    if (!(await universeLink.isVisible())) await mainNav.getByRole('button', { name: 'Reports', exact: true }).click();
     await universeLink.click();
     await p.waitForURL(/\/insights\/universe/);
     await p.getByRole('radio', { name: '2D table' }).click();

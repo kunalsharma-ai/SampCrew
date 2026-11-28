@@ -153,7 +153,7 @@ const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
 
     // A regular employee's menu leaves out the organization pages; their own record and sign-in sit behind their avatar.
     const empNav = emp.getByRole('navigation', { name: 'Main' });
-    await empNav.getByRole('link', { name: 'Leave', exact: true }).waitFor();
+    await empNav.getByRole('button', { name: /^Leave Management/ }).first().waitFor();
     expect((await empNav.getByRole('link', { name: 'Employees', exact: true }).count()) === 0, 'a regular employee still sees Employees in the menu');
     expect((await empNav.getByRole('link', { name: 'Logins & access', exact: true }).count()) === 0, 'a regular employee still sees Logins & access in the menu');
     const adminNav = admin.getByRole('navigation', { name: 'Main' });

@@ -83,6 +83,13 @@ export interface ApprovalHandler {
   rejectNeedsReason?: boolean;
   /** The title of the "waiting for your approval" notice, when the module words it itself. */
   approverTitle?: (req: ApprovalRequestRow & { meta?: ApprovalMeta | null }) => string;
+  /**
+   * An approver may send the request back for changes (Requests): the approval ends as changes_requested and the
+   * module lets the person correct it (a corrected request starts a new approval). Without it, changes are refused.
+   */
+  onChangesRequested?: (tx: TenantTx, req: ApprovalRequestRow) => Promise<void>;
+  /** Told after each step decision, whether or not it ends the request, with who decided and how (Requests history). */
+  onStepDecided?: (tx: TenantTx, req: ApprovalRequestRow, step: { membershipId: string; decision: 'approve' | 'reject' | 'changes'; comment: string | null }) => Promise<void>;
 }
 
 interface StepRow {
@@ -139,7 +146,7 @@ export class ApprovalsService {
   }
 
   /** Starts an approval in the caller's transaction and notifies the first approver(s). */
-  async start(tx: TenantTx, input: { resourceType: string; resourceId: string; subjectEmployeeId: string | null; summary: string; steps?: StepDef[]; meta?: ApprovalMeta; emailApprovers?: boolean }): Promise<string> {
+  async start(tx: TenantTx, input: { resourceType: string; resourceId: string; subjectEmployeeId: string | null; summary: string; steps?: StepDef[]; meta?: ApprovalMeta; emailApprovers?: boolean; mode?: 'any' | 'all' }): Promise<string> {
     const h = this.handler(input.resourceType);
     const actor = requestContext.tenantActor();
     // A caller can set the chain for one request (a workflow's approval step names its own approver; leave its type's rules).
@@ -196,6 +203,7 @@ export class ApprovalsService {
       requested_by_membership_id: requester,
       summary: input.summary,
       meta: input.meta ?? null,
+      ...(input.mode ? { mode: input.mode } : {}),
       category: categorizeApproval(input.resourceType, input.meta, await this.customCategories(tx)),
     });
     await tx.collection('approval_steps').insertMany(
@@ -423,10 +431,10 @@ export class ApprovalsService {
   }
 
   /** Approve or reject the step the caller may decide (with several authorities, each decides its own). */
-  async decide(requestId: string, decision: 'approve' | 'reject', comment?: string) {
+  async decide(requestId: string, decision: 'approve' | 'reject' | 'changes', comment?: string) {
     const actor = requestContext.tenantActor();
     return this.db.tenant(async (tx) => {
-      const req = await tx.collection<ApprovalRequestRow>('approval_requests').findOne({ id: requestId });
+      const req = await tx.collection<ApprovalRequestRow & { mode?: string | null }>('approval_requests').findOne({ id: requestId });
       if (!req) throw Errors.notFound('Approval');
       // Two approvers deciding at once: one commits, the other is retried and then sees the decision.
       await tx.collection('approval_requests').lock({ id: requestId });
@@ -438,6 +446,8 @@ export class ApprovalsService {
       }
       if (req.status !== 'pending') throw Errors.conflict('invalid_state', `This request is already ${req.status}`);
       if (decision === 'reject' && h.rejectNeedsReason && !(comment ?? '').trim()) throw Errors.badRequest('reason_required', 'Write the reason for rejecting, so the person knows why.');
+      if (decision === 'changes' && !h.onChangesRequested) throw Errors.badRequest('changes_not_supported', 'This request cannot be sent back for changes: approve or reject it.');
+      if (decision === 'changes' && !(comment ?? '').trim()) throw Errors.badRequest('comment_required', 'Say what needs to be corrected.');
       const mine = (await this.pendingApprovers(tx, requestId)).find((x) => x.approvers.includes(actor.membershipId));
       if (!mine) throw Errors.notFound('Approval');
       const step = mine.step;
@@ -450,25 +460,30 @@ export class ApprovalsService {
       if (named) { /* no permission over the record needed */ }
       else if (h.decider || beyondScope) await this.authz.require(h.permission, undefined, tx);
       else await this.authz.require(h.permission, await h.attributes(tx, req.resource_id), tx);
-      if (decision === 'reject' && h.rejectPermission && !named) {
+      if (decision !== 'approve' && h.rejectPermission && !named) {
         if (h.decider || beyondScope) await this.authz.require(h.rejectPermission, undefined, tx);
         else await this.authz.require(h.rejectPermission, await h.attributes(tx, req.resource_id), tx);
       }
 
       await tx.collection('approval_steps').updateOne(
         { id: step.id },
-        { $set: { status: decision === 'approve' ? 'approved' : 'rejected', decided_by_membership_id: actor.membershipId, decided_at: new Date(), comment: comment ?? null } },
+        { $set: { status: decision === 'approve' ? 'approved' : decision === 'reject' ? 'rejected' : 'changes_requested', decided_by_membership_id: actor.membershipId, decided_at: new Date(), comment: comment ?? null } },
       );
-      let final: 'approved' | 'rejected' | null = null;
-      if (decision === 'reject') {
-        // Any mandatory authority rejecting ends it: the other authorities' steps are withdrawn.
+      let final: 'approved' | 'rejected' | 'changes_requested' | null = null;
+      if (decision !== 'approve') {
+        // Any mandatory authority rejecting (or sending it back for changes) ends it: the other steps are withdrawn.
         await tx.collection('approval_steps').update({ request_id: requestId, status: { $in: ['waiting', 'pending'] } }, { $set: { status: 'cancelled' } });
-        final = 'rejected';
+        final = decision === 'reject' ? 'rejected' : 'changes_requested';
+      } else if (req.mode === 'any') {
+        // One approver is enough (Requests with the "any one" workflow): the others are no longer needed.
+        await tx.collection('approval_steps').update({ request_id: requestId, status: { $in: ['waiting', 'pending'] } }, { $set: { status: 'skipped' } });
+        final = 'approved';
       } else if (!(await tx.collection('approval_steps').exists({ request_id: requestId, status: 'pending' }))) {
         if (!(await this.nextStage(tx, requestId))) final = 'approved';
       }
+      await h.onStepDecided?.(tx, req, { membershipId: actor.membershipId, decision, comment: comment ?? null });
       await this.audit.record(tx, {
-        action: `approval.${decision === 'approve' ? 'step_approved' : 'rejected'}`,
+        action: `approval.${decision === 'approve' ? 'step_approved' : decision === 'reject' ? 'rejected' : 'changes_requested'}`,
         resourceType: req.resource_type,
         resourceId: req.resource_id,
         metadata: { approvalId: requestId, step: step.seq, authority: step.authority ?? authorityOf(step.kind, step.approver_role_key), comment: comment ?? null },
@@ -477,14 +492,15 @@ export class ApprovalsService {
         await tx.collection('approval_requests').updateOne({ id: requestId }, { $set: { status: final, decided_at: new Date() } });
         const updated = { ...req, status: final, comment: comment ?? null };
         if (final === 'approved') await h.onApproved(tx, updated);
-        else await h.onRejected(tx, updated);
+        else if (final === 'rejected') await h.onRejected(tx, updated);
+        else await h.onChangesRequested!(tx, updated);
         const subjectEmployee = req.subject_employee_id ? await tx.collection('employees').findOne({ id: req.subject_employee_id }) : undefined;
         const requesterIds = [req.requested_by_membership_id, subjectEmployee?.membership_id as string | null | undefined];
         if (!h.quiet) await this.notifications.notify(tx, {
           membershipIds: requesterIds,
           kind: `approval.${final}`,
-          title: `${h.label} ${final}`,
-          body: `${approvalStatusMessage(final, null)}\n${req.summary}${comment ? `\nRemarks: ${comment}` : ''}`,
+          title: `${h.label} ${final.replace('_', ' ')}`,
+          body: `${final === 'changes_requested' ? 'Changes were asked for.' : approvalStatusMessage(final, null)}\n${req.summary}${comment ? `\nRemarks: ${comment}` : ''}`,
           link: h.link(req.resource_id),
           email: true,
           priority: final === 'rejected' ? 'high' : 'normal',

@@ -1,21 +1,25 @@
-import type { RequestKindDef, RequestPerson, RequestView } from '@crew/contracts';
+import type { RequestCategory, RequestKindDef, RequestPerson, RequestSettings, RequestView, RequestWorkflow } from '@crew/contracts';
 
 export interface RequestOptions {
+  categories: RequestCategory[];
   kinds: RequestKindDef[];
-  me: RequestPerson;
+  me: RequestPerson & { dateOfJoining: string | null };
+  reportingManager: RequestPerson | null;
+  hrManager: RequestPerson | null;
   hasEmployeeRecord: boolean;
   suggested: RequestPerson[];
+  defaults: { primaryApproverId: string | null; additionalApproverIds: string[] };
   leaveTypes: { id: string; name: string; code: string; color: string; available: string | null; notAssigned: boolean; allowHalfDay: boolean; kind: string }[];
+  approvedLeaveCancellation: 'approval' | 'before_start';
 }
-export interface RequestList { counts: { all: number; pending: number; approved: number; rejected: number; cancelled: number }; items: RequestView[] }
-export interface LeaveForm {
-  request: RequestView;
-  company: string;
-  applicant: { name: string; employeeCode: string | null; designation: string | null; department: string | null; levelLabel: string; workspace: string | null; dateOfJoining: string | null; email: string | null };
-  reportingManager: { name: string; designation: string | null; levelLabel: string } | null;
-  hrManager: { name: string; designation: string | null; levelLabel: string } | null;
-  sendTo: { membershipId: string; name: string; levelLabel: string; designation: string | null }[];
-  leaveTypes: { id: string; name: string; code: string; color: string; available: string | null; notAssigned: boolean; allowHalfDay: boolean }[];
-  prefill: { leaveTypeId: string | null; startDate: string; endDate: string; startHalf: 'full' | 'second_half'; endHalf: 'full' | 'first_half'; reason: string };
-  hasEmployeeRecord: boolean;
+export type RequestCounts = { all: number; pending: number; changes_requested: number; approved: number; rejected: number; cancelled: number };
+export interface RequestList { counts: RequestCounts; items: RequestView[] }
+export interface ApprovalsList { counts: RequestCounts; oversees: boolean; items: RequestView[] }
+export interface RequestSummary { pending: number; changesRequested: number; toDecide: number }
+export interface RequestSettingsView { settings: RequestSettings; canManage: boolean; workflows: Record<RequestWorkflow, string> }
+export interface MyDayRequests {
+  counts: { pending: number; changesRequested: number; approved: number };
+  recent: RequestView[];
+  decisions: { id: string; requestId: string; ref: string; title: string; requester: string; action: string; comment: string | null; at: string }[];
 }
+export interface UploadedDoc { id: string; name: string; size: number }

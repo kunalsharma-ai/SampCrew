@@ -29767,7 +29767,7 @@
         "tags": [
           "Requests"
         ],
-        "summary": "Request types, who you are, the people suggested to loop in (reporting manager, HR, Super Workspace) and your leave types",
+        "summary": "What the Create Request and Apply for Leave forms fill in: you, your manager and HR, categories, suggested approvers, leave types and balances",
         "operationId": "Requests_options",
         "security": [
           {
@@ -29796,7 +29796,7 @@
         "tags": [
           "Requests"
         ],
-        "summary": "Anyone active in the workspace you can loop into a request, with their level",
+        "summary": "The directory of people you can add as an approver or CC participant (name, designation, department, workspace)",
         "operationId": "Requests_people",
         "security": [
           {
@@ -29831,13 +29831,362 @@
         }
       }
     },
+    "/api/v1/requests/settings": {
+      "get": {
+        "tags": [
+          "Requests"
+        ],
+        "summary": "Request settings: categories, their workflows (one, all or one after another) and rules",
+        "operationId": "Requests_settings",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Requests"
+        ],
+        "summary": "Save the request settings (Super Workspace)",
+        "operationId": "Requests_saveSettings",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "categories": {
+                    "minItems": 1,
+                    "maxItems": 40,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "key": {
+                          "type": "string",
+                          "pattern": "^[a-z][a-z0-9_]{1,40}$"
+                        },
+                        "label": {
+                          "type": "string",
+                          "minLength": 2,
+                          "maxLength": 60
+                        },
+                        "description": {
+                          "default": "",
+                          "type": "string",
+                          "maxLength": 160
+                        },
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "workflow": {
+                          "type": "string",
+                          "enum": [
+                            "any",
+                            "all",
+                            "sequential"
+                          ]
+                        },
+                        "attachments": {
+                          "default": "optional",
+                          "type": "string",
+                          "enum": [
+                            "none",
+                            "optional",
+                            "required"
+                          ]
+                        },
+                        "levels": {
+                          "default": [
+                            "super",
+                            "hr",
+                            "employee"
+                          ],
+                          "minItems": 1,
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "enum": [
+                              "super",
+                              "hr",
+                              "employee"
+                            ]
+                          }
+                        },
+                        "custom": {
+                          "default": false,
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "key",
+                        "label",
+                        "enabled",
+                        "workflow"
+                      ]
+                    }
+                  },
+                  "approvedLeaveCancellation": {
+                    "default": "approval",
+                    "type": "string",
+                    "enum": [
+                      "approval",
+                      "before_start"
+                    ]
+                  },
+                  "reminderDaysBefore": {
+                    "default": 1,
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 14
+                  },
+                  "defaultPrimary": {
+                    "default": "manager",
+                    "type": "string",
+                    "enum": [
+                      "manager",
+                      "hr"
+                    ]
+                  },
+                  "hrAsApprover": {
+                    "default": true,
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "categories"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/requests/summary": {
       "get": {
         "tags": [
           "Requests"
         ],
-        "summary": "Your pending requests, and approved leave requests waiting for you to apply",
+        "summary": "Menu badges: your requests waiting or sent back, and requests waiting for your decision",
         "operationId": "Requests_summary",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/requests/my-day": {
+      "get": {
+        "tags": [
+          "Requests"
+        ],
+        "summary": "My Day: your own requests and the decisions you made lately",
+        "operationId": "Requests_myDay",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/requests/approvals": {
+      "get": {
+        "tags": [
+          "Requests"
+        ],
+        "summary": "My Approvals: requests you approve (pending your approval, approved, rejected ...), with filters",
+        "operationId": "Requests_approvals",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "view",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": "pending",
+              "type": "string",
+              "enum": [
+                "pending",
+                "all",
+                "approved",
+                "rejected",
+                "cancelled",
+                "changes_requested"
+              ]
+            }
+          },
+          {
+            "name": "kind",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "wfh",
+                "leave",
+                "early_leave",
+                "late_coming",
+                "comp_off",
+                "attendance_regularization",
+                "on_duty",
+                "shift_change",
+                "other",
+                "leave_cancellation"
+              ]
+            }
+          },
+          {
+            "name": "employee",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 80
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+            }
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "super",
+                "hr",
+                "employee"
+              ]
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/requests/files": {
+      "post": {
+        "tags": [
+          "Requests"
+        ],
+        "summary": "Upload a supporting document for a request (multipart/form-data: file). Up to 10 MB.",
+        "operationId": "Requests_upload",
         "security": [
           {
             "bearer": []
@@ -29865,7 +30214,7 @@
         "tags": [
           "Requests"
         ],
-        "summary": "Your requests, newest first, with each approver and their comment",
+        "summary": "My Requests: your requests, newest first",
         "operationId": "Requests_mine",
         "security": [
           {
@@ -29881,6 +30230,7 @@
               "type": "string",
               "enum": [
                 "pending",
+                "changes_requested",
                 "approved",
                 "rejected",
                 "cancelled"
@@ -29895,14 +30245,15 @@
               "type": "string",
               "enum": [
                 "wfh",
+                "leave",
                 "early_leave",
                 "late_coming",
                 "comp_off",
-                "leave",
-                "half_day",
+                "attendance_regularization",
                 "on_duty",
                 "shift_change",
-                "other"
+                "other",
+                "leave_cancellation"
               ]
             }
           },
@@ -29938,7 +30289,7 @@
         "tags": [
           "Requests"
         ],
-        "summary": "Raise a request: type, reason, dates and times, and the people to loop in (all of them approve)",
+        "summary": "Raise a request: category, dates and times, reason, documents, primary and additional approvers and CC participants",
         "operationId": "Requests_create",
         "security": [
           {
@@ -29957,15 +30308,19 @@
                     "type": "string",
                     "enum": [
                       "wfh",
+                      "leave",
                       "early_leave",
                       "late_coming",
                       "comp_off",
-                      "leave",
-                      "half_day",
+                      "attendance_regularization",
                       "on_duty",
                       "shift_change",
                       "other"
                     ]
+                  },
+                  "categoryKey": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z0-9_]{1,40}$"
                   },
                   "title": {
                     "type": "string",
@@ -29999,14 +30354,34 @@
                     "format": "date",
                     "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
                   },
-                  "leaveTypeId": {
+                  "primaryApproverId": {
                     "type": "string",
                     "format": "uuid",
                     "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
                   },
-                  "approverMembershipIds": {
-                    "minItems": 1,
-                    "maxItems": 6,
+                  "additionalApproverIds": {
+                    "default": [],
+                    "maxItems": 5,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    }
+                  },
+                  "ccIds": {
+                    "default": [],
+                    "maxItems": 10,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    }
+                  },
+                  "attachmentIds": {
+                    "default": [],
+                    "maxItems": 5,
                     "type": "array",
                     "items": {
                       "type": "string",
@@ -30019,7 +30394,154 @@
                   "kind",
                   "reason",
                   "startDate",
-                  "approverMembershipIds"
+                  "primaryApproverId"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/requests/leave": {
+      "post": {
+        "tags": [
+          "Requests"
+        ],
+        "summary": "Apply for leave (full day, half day or hours): it goes straight to your approvers and is booked once fully approved",
+        "operationId": "Requests_applyLeave",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "leaveTypeId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  },
+                  "startDate": {
+                    "type": "string",
+                    "format": "date",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                  },
+                  "endDate": {
+                    "type": "string",
+                    "format": "date",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                  },
+                  "duration": {
+                    "default": "full",
+                    "type": "string",
+                    "enum": [
+                      "full",
+                      "half",
+                      "hours"
+                    ]
+                  },
+                  "startHalf": {
+                    "default": "full",
+                    "type": "string",
+                    "enum": [
+                      "full",
+                      "first_half",
+                      "second_half"
+                    ]
+                  },
+                  "endHalf": {
+                    "default": "full",
+                    "type": "string",
+                    "enum": [
+                      "full",
+                      "first_half"
+                    ]
+                  },
+                  "startTime": {
+                    "type": "string",
+                    "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$"
+                  },
+                  "endTime": {
+                    "type": "string",
+                    "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$"
+                  },
+                  "reason": {
+                    "type": "string",
+                    "minLength": 5,
+                    "maxLength": 1000
+                  },
+                  "contactDuringLeave": {
+                    "type": "string",
+                    "maxLength": 120
+                  },
+                  "handoverTo": {
+                    "type": "string",
+                    "maxLength": 120
+                  },
+                  "primaryApproverId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  },
+                  "additionalApproverIds": {
+                    "default": [],
+                    "maxItems": 5,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    }
+                  },
+                  "ccIds": {
+                    "default": [],
+                    "maxItems": 10,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    }
+                  },
+                  "attachmentIds": {
+                    "default": [],
+                    "maxItems": 5,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    }
+                  }
+                },
+                "required": [
+                  "leaveTypeId",
+                  "startDate",
+                  "endDate",
+                  "reason",
+                  "primaryApproverId"
                 ],
                 "additionalProperties": false
               }
@@ -30048,7 +30570,7 @@
         "tags": [
           "Requests"
         ],
-        "summary": "One request (the requester, the people looped in, or the Super Workspace)",
+        "summary": "One request with its approvers, CC participants, documents and history",
         "operationId": "Requests_get",
         "security": [
           {
@@ -30082,12 +30604,271 @@
         }
       }
     },
+    "/api/v1/requests/{id}/decision": {
+      "post": {
+        "tags": [
+          "Requests"
+        ],
+        "summary": "Approve, reject (reason required) or request changes (comment required), as an approver",
+        "operationId": "Requests_decide",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "decision": {
+                    "type": "string",
+                    "enum": [
+                      "approve",
+                      "reject",
+                      "changes"
+                    ]
+                  },
+                  "comment": {
+                    "type": "string",
+                    "maxLength": 1000
+                  }
+                },
+                "required": [
+                  "decision"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/requests/{id}/comments": {
+      "post": {
+        "tags": [
+          "Requests"
+        ],
+        "summary": "Add a comment (requester, approvers and CC participants are told)",
+        "operationId": "Requests_comment",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "body": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 1000
+                  }
+                },
+                "required": [
+                  "body"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/requests/{id}/resubmit": {
+      "post": {
+        "tags": [
+          "Requests"
+        ],
+        "summary": "Correct a request an approver sent back and send it to the same approvers again",
+        "operationId": "Requests_resubmit",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "reason": {
+                    "type": "string",
+                    "minLength": 5,
+                    "maxLength": 1000
+                  },
+                  "startDate": {
+                    "type": "string",
+                    "format": "date",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                  },
+                  "endDate": {
+                    "type": "string",
+                    "format": "date",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                  },
+                  "startTime": {
+                    "type": "string",
+                    "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$"
+                  },
+                  "endTime": {
+                    "type": "string",
+                    "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$"
+                  },
+                  "workedOn": {
+                    "type": "string",
+                    "format": "date",
+                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+                  },
+                  "title": {
+                    "type": "string",
+                    "maxLength": 120
+                  },
+                  "leaveTypeId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                  },
+                  "duration": {
+                    "type": "string",
+                    "enum": [
+                      "full",
+                      "half",
+                      "hours"
+                    ]
+                  },
+                  "startHalf": {
+                    "type": "string",
+                    "enum": [
+                      "full",
+                      "first_half",
+                      "second_half"
+                    ]
+                  },
+                  "endHalf": {
+                    "type": "string",
+                    "enum": [
+                      "full",
+                      "first_half"
+                    ]
+                  },
+                  "attachmentIds": {
+                    "maxItems": 5,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+                    }
+                  },
+                  "note": {
+                    "type": "string",
+                    "maxLength": 500
+                  }
+                },
+                "required": [
+                  "reason",
+                  "startDate"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/requests/{id}/cancel": {
       "post": {
         "tags": [
           "Requests"
         ],
-        "summary": "Cancel your request (pending, or approved and not started yet)",
+        "summary": "Cancel your request (waiting for a decision or corrections, or approved and not started; not approved leave)",
         "operationId": "Requests_cancel",
         "security": [
           {
@@ -30139,52 +30920,13 @@
         }
       }
     },
-    "/api/v1/requests/{id}/leave-form": {
-      "get": {
-        "tags": [
-          "Requests"
-        ],
-        "summary": "The leave application form for an approved leave request, filled in with your details, manager, HR, leave types and the approved days",
-        "operationId": "Requests_leaveForm",
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Success"
-          },
-          "4XX": {
-            "description": "Error envelope",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/requests/{id}/leave": {
+    "/api/v1/requests/{id}/cancel-leave": {
       "post": {
         "tags": [
           "Requests"
         ],
-        "summary": "Apply for the leave of an approved request: it goes to the same people (Approvals and email) and is saved with the form",
-        "operationId": "Requests_applyLeave",
+        "summary": "Cancel approved leave: through your approvers, or straight away before it starts when the settings allow",
+        "operationId": "Requests_cancelLeave",
         "security": [
           {
             "bearer": []
@@ -30208,55 +30950,13 @@
                 "$schema": "https://json-schema.org/draft/2020-12/schema",
                 "type": "object",
                 "properties": {
-                  "leaveTypeId": {
-                    "type": "string",
-                    "format": "uuid",
-                    "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-                  },
-                  "startDate": {
-                    "type": "string",
-                    "format": "date",
-                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
-                  },
-                  "endDate": {
-                    "type": "string",
-                    "format": "date",
-                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
-                  },
-                  "startHalf": {
-                    "default": "full",
-                    "type": "string",
-                    "enum": [
-                      "full",
-                      "second_half"
-                    ]
-                  },
-                  "endHalf": {
-                    "default": "full",
-                    "type": "string",
-                    "enum": [
-                      "full",
-                      "first_half"
-                    ]
-                  },
                   "reason": {
                     "type": "string",
                     "minLength": 5,
                     "maxLength": 1000
-                  },
-                  "contactDuringLeave": {
-                    "type": "string",
-                    "maxLength": 120
-                  },
-                  "handoverTo": {
-                    "type": "string",
-                    "maxLength": 120
                   }
                 },
                 "required": [
-                  "leaveTypeId",
-                  "startDate",
-                  "endDate",
                   "reason"
                 ],
                 "additionalProperties": false
@@ -30264,6 +30964,53 @@
             }
           }
         },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "4XX": {
+            "description": "Error envelope",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/requests/{id}/files/{fileId}/link": {
+      "post": {
+        "tags": [
+          "Requests"
+        ],
+        "summary": "A short-lived download link for a document on a request you can open",
+        "operationId": "Requests_fileLink",
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "fileId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Success"

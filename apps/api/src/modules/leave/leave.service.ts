@@ -5,7 +5,7 @@ import type { z } from 'zod';
 import {
   LEAVE_AUTHORITY_LABELS, LEAVE_VISIBILITY_LABELS, leaveApprovalRules, leaveCodeFrom, leaveEligibility, leaveMath, leaveRef, leaveRoutesFor, leaveTypeInput, leaveTypePolicy,
   type LeaveAuthority, type LeaveModifyInput, type LeaveQuantityInput, type LeaveRequestInput, type LeaveTypeInput, type LeaveTypeSimpleInput, type LeaveTypeUpdate,
-  type LeaveVisibility, type WorkCalendar, COMP_OFF_WINDOW_DAYS, confirmationCredit, type CompOffRequestInput, type LeaveStatusRuleInput, type compOffDecisionInput,
+  type LeaveVisibility, type WorkCalendar, COMP_OFF_WINDOW_DAYS, hoursBetween, confirmationCredit, type CompOffRequestInput, type LeaveStatusRuleInput, type compOffDecisionInput,
 } from '@crew/contracts';
 import type {
   holidayCalendarInput, holidayInput, leaveAdjustmentInput, leaveAdjustmentsQuery, leaveBalanceOverviewQuery, leaveHistoryQuery, leaveReportQuery,
@@ -44,6 +44,8 @@ interface RequestRow {
   start_half: 'full' | 'second_half';
   end_half: 'full' | 'first_half';
   reason?: string | null;
+  /** Applied through Requests (28 November 2026): the request that decides it. */
+  staff_request_id?: string | null;
   replaces_request_id?: string | null;
   modifications?: Doc[];
   approval_route?: LeaveAuthority | null;
@@ -79,6 +81,8 @@ function applicationFormRows(f: Doc, days: string): { label: string; value: stri
   ];
 }
 const range = (a: string, b: string) => (a === b ? a : `${a} to ${b}`);
+/** Hourly leave is counted as a share of a working day of this many hours. */
+export const HOURS_PER_LEAVE_DAY = 8;
 
 /**
  * Leave management (simplified 2026-11-23). One record for each leave type, request and manual quantity, used by the
@@ -859,7 +863,7 @@ export class LeaveService implements OnModuleInit {
    * Checks a draft against the type, its policy, the person's allocation, the calendar and the balance, and works out
    * the approval route. When it changes an existing request, that request's days count as available again.
    */
-  private async evaluate(tx: TenantTx, e: EmployeeLite, input: Omit<LeaveRequestInput, 'employeeId'>, onBehalf: boolean, replacing?: RequestRow, looped = false) {
+  private async evaluate(tx: TenantTx, e: EmployeeLite, input: Omit<LeaveRequestInput, 'employeeId'>, onBehalf: boolean, replacing?: RequestRow, looped = false, hours?: number) {
     const type = await tx.collection<Doc>('leave_types').findOne({ id: input.leaveTypeId });
     if (!type || type.archived_at) throw Errors.badRequest('invalid_leave_type', type ? `${type.name} is no longer active` : 'Leave type not found');
     const book = await loadBook(tx);
@@ -882,8 +886,15 @@ export class LeaveService implements OnModuleInit {
     if (e.status === 'probation' && (await tx.collection('leave_status_rules').exists({ leave_type_id: type.id, probation: 'no_leave' }))) throw Errors.badRequest('not_during_probation', `${type.name} is available once you are confirmed (not during probation)`);
 
     const cal = await this.calendarFor(tx, e);
-    const daysH = countLeaveDays(input, type.counts_calendar_days ? { weeklyOffs: [], holidays: new Set() } : cal);
+    let daysH = countLeaveDays(input, type.counts_calendar_days ? { weeklyOffs: [], holidays: new Set() } : cal);
     if (daysH <= 0) throw Errors.badRequest('no_working_days', 'Those dates are all weekly offs or holidays');
+    // Hourly leave (Requests, 28 November 2026): part of one working day, as a share of a working day of
+    // HOURS_PER_LEAVE_DAY hours. Types that allow half days allow hours too.
+    if (hours !== undefined) {
+      if (!type.allow_half_day) throw Errors.badRequest('no_hourly_leave', `${type.name} cannot be taken in hours`);
+      if (hours <= 0 || hours >= HOURS_PER_LEAVE_DAY) throw Errors.badRequest('hours_out_of_range', `Hourly leave is less than a working day (${HOURS_PER_LEAVE_DAY} hours). Choose a half or full day instead.`);
+      daysH = Math.max(1, Math.round((hours / HOURS_PER_LEAVE_DAY) * 100));
+    }
     if (type.kind === 'optional_holiday') {
       const optional = new Set(cal.id ? (await tx.collection('holidays').find({ calendar_id: cal.id, is_optional: true, holiday_date: { $gte: input.startDate, $lte: input.endDate } }, { projection: { holiday_date: 1 } })).map((h) => h.holiday_date as string) : []);
       for (let d = input.startDate; d <= input.endDate; d = addDays(d, 1)) {
@@ -977,7 +988,9 @@ export class LeaveService implements OnModuleInit {
    * (Requests section): it goes to the people looped into that request, all at once, with the leave application form
    * saved on it; the approvers get the form by email from the Requests module, so the engine does not email them.
    */
-  async requestIn(tx: TenantTx, input: LeaveRequestInput, looped?: { staffRequestId: string; approverMembershipIds: string[]; form: Record<string, unknown> }) {
+  async requestIn(tx: TenantTx, input: LeaveRequestInput, managed?: { staffRequestId: string; form: Record<string, unknown>; startTime?: string; endTime?: string }) {
+    const looped = managed;
+    const hours = managed?.startTime && managed.endTime ? hoursBetween(managed.startTime, managed.endTime) : undefined;
     const actor = requestContext.tenantActor();
     {
       const { e, onBehalf } = await this.requestTarget(tx, input.employeeId);
@@ -985,7 +998,7 @@ export class LeaveService implements OnModuleInit {
       await checkFormRules(tx, 'leave_request', input as Record<string, unknown>, ['reason']);
       // One request at a time per person, so the overlap and balance checks see every other request.
       await tx.collection('employees').lock({ id: e.id });
-      const ev = await this.evaluate(tx, e, input, onBehalf, undefined, Boolean(looped));
+      const ev = await this.evaluate(tx, e, input, onBehalf, undefined, Boolean(looped), hours);
       await this.checkDocuments(tx, input.documentIds ?? [], ev.docsRequired);
       if (await tx.collection('leave_requests').exists({ employee_id: e.id, status: { $in: ['pending', 'approved'] }, start_date: { $lte: input.endDate }, end_date: { $gte: input.startDate } })) {
         throw Errors.conflict('overlapping_leave', 'There is already a pending or approved request on these dates');
@@ -1000,16 +1013,20 @@ export class LeaveService implements OnModuleInit {
         reviewer_hr_workspace_id: !looped && ev.route !== 'super' ? ev.opts.authorities.hr?.hrWorkspaceId ?? null : null,
         reviewer_hr_company: !looped && ev.route !== 'super' ? Boolean(ev.opts.authorities.hr?.company) : false,
         ...(looped ? { staff_request_id: looped.staffRequestId, application_form: looped.form } : {}),
+        ...(hours !== undefined ? { start_time: managed!.startTime, end_time: managed!.endTime, hours: String(Math.round(hours * 100) / 100) } : {}),
       });
       const sameDay = await this.discipline.onLeaveRequested(tx, { id: row.id as string, employee_id: e.id, leave_type_id: input.leaveTypeId, start_date: input.startDate });
-      const approvalId = await this.approvals.start(tx, {
-        resourceType: 'leave_request', resourceId: row.id, subjectEmployeeId: e.id,
-        steps: looped ? looped.approverMembershipIds.map((m) => ({ type: 'person' as const, membershipId: m, stage: 1 })) : this.stepsFor(ev.route, ev),
-        emailApprovers: !looped,
-        summary: `${e.name}: ${type.name}, ${range(input.startDate, input.endDate)} (${fromH(ev.daysH)} days), to ${looped ? 'the people looped into the request' : LEAVE_AUTHORITY_LABELS[ev.route]}${input.reason ? `. "${input.reason}"` : ''}${sameDay ? ` ${sameDay}` : ''}`,
-        meta: { leaveTypeCode: type.code, leaveTypeName: type.name, paid: Boolean(type.paid), halfDay: input.startHalf !== 'full' || input.endHalf !== 'full' },
-      });
-      await tx.collection('leave_requests').updateOne({ id: row.id }, { $set: { approval_request_id: approvalId } });
+      // Leave applied through Requests is decided through the request (its approvers, its workflow): the Requests
+      // module starts that approval and books the leave when it is approved.
+      if (!looped) {
+        const approvalId = await this.approvals.start(tx, {
+          resourceType: 'leave_request', resourceId: row.id, subjectEmployeeId: e.id,
+          steps: this.stepsFor(ev.route, ev),
+          summary: `${e.name}: ${type.name}, ${range(input.startDate, input.endDate)} (${fromH(ev.daysH)} days), to ${LEAVE_AUTHORITY_LABELS[ev.route]}${input.reason ? `. "${input.reason}"` : ''}${sameDay ? ` ${sameDay}` : ''}`,
+          meta: { leaveTypeCode: type.code, leaveTypeName: type.name, paid: Boolean(type.paid), halfDay: input.startHalf !== 'full' || input.endHalf !== 'full' },
+        });
+        await tx.collection('leave_requests').updateOne({ id: row.id }, { $set: { approval_request_id: approvalId } });
+      }
       // Custom fields of the Leave request form (Form management, issue #91), saved with the request.
       if (input.customFields) await this.customFields.save('leave_request', row.id as string, input.customFields, { tx, creating: true });
       await this.audit.record(tx, {
@@ -1035,6 +1052,45 @@ export class LeaveService implements OnModuleInit {
     await this.outbox.publish(tx, requestContext.tenantActor().tenantId, 'leave.approved', { leaveRequestId: r.id, employeeId: r.employee_id });
   }
 
+  // ---------------------------------------------------------------------------------------------------------
+  // Leave applied through Requests (28 November 2026): the request's approval decides it
+  // ---------------------------------------------------------------------------------------------------------
+
+  /** Points the leave at the request's current approval (cancelling the leave withdraws it). */
+  async linkApproval(tx: TenantTx, leaveId: string, approvalId: string) {
+    await tx.collection('leave_requests').updateOne({ id: leaveId }, { $set: { approval_request_id: approvalId } });
+  }
+
+  /** The request was fully approved: the leave is booked (balance and attendance) now, and only now. */
+  async approveManaged(tx: TenantTx, leaveId: string, comment: string | null) {
+    const r = await tx.collection<RequestRow>('leave_requests').findOne({ id: leaveId });
+    if (!r) return;
+    await this.onApproved(tx, { id: r.approval_request_id ?? leaveId, resource_type: 'leave_request', resource_id: leaveId, subject_employee_id: r.employee_id, requested_by_membership_id: r.requested_by_membership_id ?? null, summary: '', status: 'approved', comment });
+  }
+
+  /** The request was rejected, sent back for changes or withdrawn: the pending leave is closed, nothing was booked. */
+  async closeManaged(tx: TenantTx, leaveId: string, status: 'rejected' | 'cancelled', reason: string | null) {
+    const set = status === 'rejected' ? { status, decided_at: new Date() } : { status, cancelled_at: new Date(), cancel_reason: reason };
+    if (!(await tx.collection('leave_requests').updateOne({ id: leaveId, status: 'pending' }, { $set: set }))) return;
+    await this.discipline.onLeaveClosed(tx, leaveId, status);
+    await this.audit.record(tx, { action: `leave_request.${status}`, resourceType: 'leave_request', resourceId: leaveId, metadata: { reason, via: 'request' } });
+  }
+
+  /** Approved leave is cancelled (a leave cancellation request was approved, or the policy let the person do it). */
+  async cancelApprovedManaged(tx: TenantTx, leaveId: string, reason: string) {
+    const r = await tx.collection<RequestRow>('leave_requests').findOne({ id: leaveId });
+    if (!r || !(await tx.collection('leave_requests').updateOne({ id: leaveId, status: 'approved' }, { $set: { status: 'cancelled', cancelled_at: new Date(), cancel_reason: reason } }))) {
+      throw Errors.conflict('invalid_state', 'This leave is no longer approved');
+    }
+    await tx.collection('leave_ledger').insert({
+      employee_id: r.employee_id, leave_type_id: r.leave_type_id, leave_year: yearOf(r.start_date), kind: 'reversal', quantity: r.days,
+      effective_on: r.start_date, leave_request_id: leaveId, note: reason, created_by: requestContext.tenantActor().userId,
+    });
+    await this.discipline.onLeaveClosed(tx, leaveId, 'cancelled');
+    await this.attendance.recomputeFor(tx, r.employee_id, r.start_date, r.end_date);
+    await this.audit.record(tx, { action: 'leave_request.cancelled', resourceType: 'leave_request', resourceId: leaveId, metadata: { from: 'approved', reason, via: 'request' } });
+  }
+
   /**
    * Cancels a request. Pending requests: the employee or anyone who approves for them. Approved leave: the employee
    * before it starts, or an approver at any time; the days go back through a reversal line.
@@ -1049,10 +1105,22 @@ export class LeaveService implements OnModuleInit {
       const { isOwner, isApprover } = await this.rolesOn(tx, r, e);
       if (r.status !== 'pending' && r.status !== 'approved') throw Errors.conflict('invalid_state', `This request is already ${r.status}`);
       if (r.status === 'approved' && !isApprover && r.start_date <= today()) throw Errors.forbidden('Leave that has started can only be cancelled by your approver or HR');
+      // Leave applied through Requests: approved leave is cancelled through the approvers when the Request settings
+      // say so; a pending one is withdrawn together with its request.
+      if (r.staff_request_id && r.status === 'approved' && !isApprover) {
+        const rs = await tx.collection('request_settings').findOne({});
+        if (((rs?.settings as { approvedLeaveCancellation?: string } | undefined)?.approvedLeaveCancellation ?? 'approval') === 'approval') {
+          throw Errors.conflict('cancellation_needs_approval', 'Approved leave is cancelled through your approvers: open the request in My Requests and choose Cancel leave.');
+        }
+      }
       if (!(await tx.collection('leave_requests').updateOne({ id, status: r.status }, { $set: { status: 'cancelled', cancelled_at: new Date(), cancel_reason: reason ?? null } }))) {
         throw Errors.conflict('invalid_state', 'This request changed meanwhile. Refresh and try again.');
       }
       if (r.status === 'pending' && r.approval_request_id) await this.approvals.cancel(tx, r.approval_request_id);
+      if (r.status === 'pending' && r.staff_request_id) {
+        await tx.collection('staff_requests').updateOne({ id: r.staff_request_id, status: { $in: ['pending', 'changes_requested'] } }, { $set: { status: 'cancelled', cancelled_at: new Date(), cancel_reason: reason ?? null } });
+        await tx.collection('staff_request_events').insert({ request_id: r.staff_request_id, action: 'cancelled', membership_id: actor.membershipId, comment: reason ?? null });
+      }
       await this.discipline.onLeaveClosed(tx, id, 'cancelled');
       for (const change of await tx.collection<RequestRow>('leave_requests').find({ replaces_request_id: id, status: 'pending' })) {
         await tx.collection('leave_requests').updateOne({ id: change.id, status: 'pending' }, { $set: { status: 'cancelled', cancelled_at: new Date(), cancel_reason: 'The leave it changed was cancelled' } });
@@ -1113,6 +1181,7 @@ export class LeaveService implements OnModuleInit {
       const { isApprover, self } = await this.rolesOn(tx, r, e);
       if (r.status !== 'pending' && r.status !== 'approved') throw Errors.conflict('invalid_state', `This request is already ${r.status}`);
       if (r.status === 'approved' && !isApprover && r.start_date <= today()) throw Errors.forbidden('Leave that has started can only be changed by your approver or HR');
+      if (r.staff_request_id) throw Errors.conflict('change_through_request', 'This leave was applied through Requests: change it there (cancel it and apply again, or correct it when an approver asks for changes).');
       if (r.status === 'approved' && (await tx.collection('leave_requests').exists({ replaces_request_id: id, status: 'pending' }))) {
         throw Errors.conflict('change_pending', 'A change to this leave is already waiting for approval. Cancel that change first.');
       }

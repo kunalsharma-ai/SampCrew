@@ -134,6 +134,8 @@ export interface ConversationView {
   members: { membershipId: string; name: string | null; identity: SenderIdentity | null }[];
   /** Direct messages: the other person, with their level and workspace. */
   counterpart: SenderIdentity | null;
+  /** The other person is online now (direct and HR conversations); for a group, anyone else in it is. */
+  online: boolean;
   lastMessage: { body: string; senderName: string | null; at: string } | null;
   unread: number;
   muted: boolean;
