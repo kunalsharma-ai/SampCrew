@@ -25,6 +25,13 @@ export interface NavItem {
   locked?: boolean;
   /** Extra words the Settings search matches. */
   keywords?: string;
+  /**
+   * Pages merged under one menu entry (28 November 2026: a shorter menu). The entry opens its first page the person
+   * may see (or its own page when `ownPage`), and lists the pages under it when opened. Shown only when one is visible.
+   */
+  children?: NavItem[];
+  /** The entry is a page itself (Settings: the hub), as well as the parent of its children. */
+  ownPage?: boolean;
 }
 
 export interface NavGroup {
@@ -35,19 +42,25 @@ export interface NavGroup {
 /**
  * Navigation, grouped by HR module. Every item is shown only when the member holds its permission and the plan
  * includes its feature, so each role sees a navigation that matches what it can do.
+ *
+ * Shorter menu (28 November 2026): pages that do one job sit under one entry (Attendance dashboards, Leave
+ * administration, Recruitment, Payroll ...), and every setting is under Settings, the one place to manage them, so
+ * the HR and Super Workspace menus show a handful of entries per group instead of a hundred links.
  */
 export const NAV: NavGroup[] = [
   {
     label: 'Workspace',
     items: [
       { href: '/', label: 'Home', icon: 'home' },
+      // Requests (28 November 2026): work from home, early leave, late coming, comp off, leave ... at every level.
+      { href: '/requests', label: 'Requests', icon: 'send', keywords: 'wfh work from home early leave late coming comp off half day on duty raise request' },
       { href: '/approvals', label: 'Approvals', icon: 'inbox' },
       { href: '/tasks', label: 'My tasks', icon: 'list-checks' },
-      { href: '/documents', label: 'Documents', icon: 'file-stack', permission: 'documents:read', feature: 'documents' },
-      { href: '/onboarding-documents/mine', label: 'My onboarding documents', icon: 'clipboard-list', permission: 'documents:read', feature: 'documents', keywords: 'joining documents upload aadhaar pan certificates' },
-      { href: '/announcements', label: 'Announcements', icon: 'megaphone', permission: 'announcements:read', feature: 'announcements' },
       // Communication replaces Ask HR: chat, emails from HR and help requests (Ask HR cases, the queue for HR).
       { href: '/communication', label: 'Communication', icon: 'messages-square', permission: 'helpdesk:use', feature: 'helpdesk' },
+      { href: '/announcements', label: 'Announcements', icon: 'megaphone', permission: 'announcements:read', feature: 'announcements' },
+      { href: '/documents', label: 'Documents', icon: 'file-stack', permission: 'documents:read', feature: 'documents' },
+      { href: '/notifications', label: 'Notifications', icon: 'bell' },
       // The Super Workspace's private chat with the SampCrew Console Admin team (every plan; not a Communication part).
       { href: '/support', label: 'SampCrew Support', icon: 'headset', superOnly: true },
       // Help & Support: guides, FAQs and tutorials for what this person can use, and Raise a Query (every level).
@@ -62,107 +75,134 @@ export const NAV: NavGroup[] = [
       { href: '/payslips', label: 'Payslips', icon: 'file-text', permission: 'payslips:read', feature: 'payroll' },
       { href: '/expenses', label: 'Expenses', icon: 'receipt', permission: 'expenses:submit', feature: 'expenses' },
       { href: '/appraisal', label: 'Appraisal', icon: 'award', permission: 'performance:read', feature: 'performance' },
+      { href: '/goals', label: 'Goals', icon: 'target', permission: 'performance:read', feature: 'performance' },
+      { href: '/learning', label: 'My learning', icon: 'graduation-cap', permission: 'learning:read', feature: 'learning' },
       { href: '/assets/mine', label: 'My assets', icon: 'laptop', permission: 'assets:view', feature: 'asset_management' },
+      { href: '/onboarding-documents/mine', label: 'My onboarding documents', icon: 'clipboard-list', permission: 'documents:read', feature: 'documents', keywords: 'joining documents upload aadhaar pan certificates' },
     ],
   },
   {
     label: 'Employee management',
     items: [
       { href: '/employees', label: 'Employees', icon: 'contact', permission: 'employees:read', beyondOwn: true },
-      { href: '/hr-workspaces', label: 'HR Workspaces', icon: 'network', permission: 'hierarchy:read' },
-      { href: '/employee-features', label: 'Employee features', icon: 'toggle-right', permission: 'modules:assign' },
-      { href: '/organization', label: 'Structure', icon: 'building', permission: 'org:read' },
       { href: '/people', label: 'Logins & access', icon: 'users', permission: 'users:read', beyondOwn: true },
-      { href: '/profile/updates', label: 'Profile updates', icon: 'user-check', permission: 'profiles:review' },
-      { href: '/settings/onboarding', label: 'Onboarding checklists', icon: 'list-checks', permission: 'employees:create', feature: 'onboarding' },
-      { href: '/onboarding-documents', label: 'Onboarding documents', icon: 'clipboard-list', permission: 'documents:read', feature: 'documents', adminOnly: true, keywords: 'joining documents progress approve reject new joiner' },
-      { href: '/imports', label: 'Data import', icon: 'upload', permission: 'imports:run', feature: 'data_import' },
-      { href: '/verification', label: 'Background verification', icon: 'shield-check', permission: 'bgv:view', feature: 'background_verification' },
+      {
+        href: '', label: 'Organization', icon: 'network', children: [
+          { href: '/organization', label: 'Structure', icon: 'building', permission: 'org:read' },
+          { href: '/hr-workspaces', label: 'HR Workspaces', icon: 'network', permission: 'hierarchy:read' },
+          { href: '/employee-features', label: 'Employee features', icon: 'toggle-right', permission: 'modules:assign' },
+        ],
+      },
+      {
+        href: '', label: 'Joining & records', icon: 'user-check', children: [
+          { href: '/profile/updates', label: 'Profile updates', icon: 'user-check', permission: 'profiles:review' },
+          { href: '/onboarding-documents', label: 'Onboarding documents', icon: 'clipboard-list', permission: 'documents:read', feature: 'documents', adminOnly: true, keywords: 'joining documents progress approve reject new joiner' },
+          { href: '/verification', label: 'Background verification', icon: 'shield-check', permission: 'bgv:view', feature: 'background_verification' },
+          { href: '/imports', label: 'Data import', icon: 'upload', permission: 'imports:run', feature: 'data_import' },
+        ],
+      },
       { href: '/assets', label: 'Assets', icon: 'laptop', permission: 'assets:view', beyondOwn: true, feature: 'asset_management' },
-    ],
-  },
-  {
-    label: 'Recruitment & ATS',
-    items: [
-      { href: '/recruitment', label: 'Jobs', icon: 'briefcase', permission: 'requisitions:read', feature: 'recruitment' },
-      { href: '/recruitment/candidates', label: 'Candidates', icon: 'user-search', permission: 'candidates:read', feature: 'recruitment' },
-      { href: '/recruitment/crm', label: 'Candidate CRM', icon: 'contact', feature: 'recruitment', candidateCrm: true },
-      // Interview panels: only for people who work in recruitment, not in every employee's menu (scorecards still open from notifications).
-      { href: '/recruitment/interviews', label: 'My interviews', icon: 'message-square', permission: 'requisitions:read', feature: 'recruitment' },
-      { href: '/settings/recruitment', label: 'Recruitment settings', icon: 'sliders', permission: 'recruitment:configure', feature: 'recruitment' },
-    ],
-  },
-  {
-    label: 'Staffing & bids',
-    items: [
-      { href: '/staffing/bids', label: 'Staffing bids', icon: 'handshake', permission: 'bids:read', feature: 'staffing_bids' },
-      { href: '/staffing/clients', label: 'Clients', icon: 'building-office', permission: 'bids:read', feature: 'staffing_bids' },
-      { href: '/staffing/templates', label: 'Proposal templates', icon: 'file-stack', permission: 'bids:manage', feature: 'staffing_bids' },
-      { href: '/staffing/rate-cards', label: 'Rate cards', icon: 'tags', permission: 'bids:read', feature: 'staffing_bids' },
     ],
   },
   {
     label: 'Attendance & time',
     items: [
-      { href: '/attendance/work-mode', label: 'Workforce attendance', icon: 'building', permission: 'attendance:read', feature: 'attendance_basic', adminOnly: true },
-      { href: '/attendance/work-mode/register', label: 'Office and home register', icon: 'clipboard-list', permission: 'attendance:read', feature: 'attendance_basic', adminOnly: true },
-      { href: '/attendance/employees', label: 'Employee Workspace attendance', icon: 'users-round', permission: 'attendance:read', feature: 'attendance_basic', adminOnly: true },
-      { href: '/attendance/hr-workspaces', label: 'HR Workspace attendance', icon: 'network', permission: 'attendance:read', feature: 'attendance_basic', superOnly: true },
-      { href: '/attendance/register', label: 'All employees attendance', icon: 'calendar-range', permission: 'attendance:approve', feature: 'attendance_basic', adminOnly: true },
-      { href: '/attendance/team', label: 'Team attendance', icon: 'users-round', permission: 'attendance:approve', feature: 'attendance_basic', adminOnly: true },
-      { href: '/attendance/late', label: 'Late coming & penalties', icon: 'alarm-clock', permission: 'attendance:approve', feature: 'attendance_basic', adminOnly: true },
-      { href: '/settings/attendance-access', label: 'Attendance permissions', icon: 'shield-check', permission: 'hierarchy:manage', feature: 'attendance_basic', superOnly: true },
+      {
+        href: '', label: 'Attendance dashboards', icon: 'calendar-range', children: [
+          { href: '/attendance/work-mode', label: 'Workforce attendance', icon: 'building', permission: 'attendance:read', feature: 'attendance_basic', adminOnly: true },
+          { href: '/attendance/work-mode/register', label: 'Office and home register', icon: 'clipboard-list', permission: 'attendance:read', feature: 'attendance_basic', adminOnly: true },
+          { href: '/attendance/employees', label: 'Employee Workspace attendance', icon: 'users-round', permission: 'attendance:read', feature: 'attendance_basic', adminOnly: true },
+          { href: '/attendance/hr-workspaces', label: 'HR Workspace attendance', icon: 'network', permission: 'attendance:read', feature: 'attendance_basic', superOnly: true },
+          { href: '/attendance/register', label: 'All employees attendance', icon: 'calendar-range', permission: 'attendance:approve', feature: 'attendance_basic', adminOnly: true },
+          { href: '/attendance/team', label: 'Team attendance', icon: 'users-round', permission: 'attendance:approve', feature: 'attendance_basic', adminOnly: true },
+          { href: '/attendance/late', label: 'Late coming & penalties', icon: 'alarm-clock', permission: 'attendance:approve', feature: 'attendance_basic', adminOnly: true },
+        ],
+      },
       { href: '/shifts', label: 'Shifts', icon: 'calendar-clock', permission: 'shifts:read', feature: 'shift_scheduling' },
-      { href: '/attendance/offices', label: 'Office locations', icon: 'map-pin', permission: 'attendance:configure', feature: 'attendance_basic' },
-      { href: '/attendance/work-mode/settings', label: 'Office and home rules', icon: 'sliders', permission: 'attendance:configure', feature: 'attendance_basic' },
-      { href: '/settings/attendance', label: 'Attendance settings', icon: 'timer', permission: 'attendance:configure', feature: 'attendance_basic' },
-      { href: '/settings/devices', label: 'Attendance devices', icon: 'fingerprint', permission: 'devices:manage', feature: 'attendance_advanced' },
-      { href: '/leave/balances', label: 'Leave balances', icon: 'calendar-range', permission: 'leave:approve', feature: 'leave' },
-      // Any of the leave jobs opens it: an HR Workspace the Super Workspace allowed to create leave types, assign
-      // or assign quantities finds Leave management even without the calendars and reports switch.
-      { href: '/leave/manage', label: 'Leave management', icon: 'sliders', anyPermission: ['leave:allocate', 'leave:assign', 'leavetypes:create'], feature: 'leave' },
-      { href: '/settings/leave', label: 'Holidays and leave rules', icon: 'calendar-range', permission: 'leave:allocate', feature: 'leave' },
+      {
+        href: '', label: 'Leave administration', icon: 'sliders', children: [
+          // Any of the leave jobs opens it: an HR Workspace the Super Workspace allowed to create leave types, assign
+          // or assign quantities finds Leave management even without the calendars and reports switch.
+          { href: '/leave/manage', label: 'Leave management', icon: 'sliders', anyPermission: ['leave:allocate', 'leave:assign', 'leavetypes:create'], feature: 'leave' },
+          { href: '/leave/balances', label: 'Leave balances', icon: 'calendar-range', permission: 'leave:approve', feature: 'leave' },
+        ],
+      },
+    ],
+  },
+  {
+    label: 'Recruitment & ATS',
+    items: [
+      {
+        href: '', label: 'Recruitment', icon: 'briefcase', children: [
+          { href: '/recruitment', label: 'Jobs', icon: 'briefcase', permission: 'requisitions:read', feature: 'recruitment' },
+          { href: '/recruitment/candidates', label: 'Candidates', icon: 'user-search', permission: 'candidates:read', feature: 'recruitment' },
+          { href: '/recruitment/crm', label: 'Candidate CRM', icon: 'contact', feature: 'recruitment', candidateCrm: true },
+          // Interview panels: only for people who work in recruitment, not in every employee's menu (scorecards still open from notifications).
+          { href: '/recruitment/interviews', label: 'My interviews', icon: 'message-square', permission: 'requisitions:read', feature: 'recruitment' },
+        ],
+      },
+      {
+        href: '', label: 'Staffing', icon: 'handshake', children: [
+          { href: '/staffing/bids', label: 'Staffing bids', icon: 'handshake', permission: 'bids:read', feature: 'staffing_bids' },
+          { href: '/staffing/clients', label: 'Clients', icon: 'building-office', permission: 'bids:read', feature: 'staffing_bids' },
+          { href: '/staffing/templates', label: 'Proposal templates', icon: 'file-stack', permission: 'bids:manage', feature: 'staffing_bids' },
+          { href: '/staffing/rate-cards', label: 'Rate cards', icon: 'tags', permission: 'bids:read', feature: 'staffing_bids' },
+        ],
+      },
     ],
   },
   {
     label: 'Payroll',
     items: [
-      { href: '/payroll', label: 'Payroll runs', icon: 'wallet', permission: 'payroll:read', feature: 'payroll' },
-      { href: '/payroll/salaries', label: 'Salaries', icon: 'banknote', permission: 'payroll:read', feature: 'payroll' },
-      { href: '/settings/payroll', label: 'Payroll settings', icon: 'landmark', permission: 'payroll:configure', feature: 'payroll' },
+      {
+        href: '', label: 'Payroll', icon: 'wallet', children: [
+          { href: '/payroll', label: 'Payroll runs', icon: 'wallet', permission: 'payroll:read', feature: 'payroll' },
+          { href: '/payroll/salaries', label: 'Salaries', icon: 'banknote', permission: 'payroll:read', feature: 'payroll' },
+        ],
+      },
     ],
   },
   {
     label: 'Performance & learning',
     items: [
-      { href: '/goals', label: 'Goals', icon: 'target', permission: 'performance:read', feature: 'performance' },
       { href: '/reviews', label: 'Reviews', icon: 'messages-square', permission: 'performance:read', feature: 'performance' },
-      { href: '/settings/appraisals', label: 'Appraisal forms & cycles', icon: 'award', permission: 'performance:configure', feature: 'performance' },
-      { href: '/learning', label: 'My learning', icon: 'graduation-cap', permission: 'learning:read', feature: 'learning' },
-      { href: '/learning/manage', label: 'Learning management', icon: 'book-open', permission: 'learning:manage', feature: 'learning' },
-      { href: '/learning/catalogue', label: 'Learning paths', icon: 'list-checks', permission: 'learning:configure', feature: 'learning' },
+      {
+        href: '', label: 'Learning administration', icon: 'book-open', children: [
+          { href: '/learning/manage', label: 'Learning management', icon: 'book-open', permission: 'learning:manage', feature: 'learning' },
+          { href: '/learning/catalogue', label: 'Learning paths', icon: 'list-checks', permission: 'learning:configure', feature: 'learning' },
+        ],
+      },
     ],
   },
   {
     label: 'Engagement & relations',
     items: [
       { href: '/recognition', label: 'Recognition', icon: 'heart', permission: 'recognition:give', feature: 'engagement' },
-      { href: '/surveys', label: 'Surveys', icon: 'clipboard-list', permission: 'surveys:respond', feature: 'engagement' },
-      { href: '/surveys/manage', label: 'Survey results', icon: 'chart', permission: 'engagement:manage', feature: 'engagement' },
+      {
+        href: '', label: 'Engagement surveys', icon: 'clipboard-list', children: [
+          { href: '/surveys', label: 'Surveys', icon: 'clipboard-list', permission: 'surveys:respond', feature: 'engagement' },
+          { href: '/surveys/manage', label: 'Survey results', icon: 'chart', permission: 'engagement:manage', feature: 'engagement' },
+        ],
+      },
       { href: '/announcements/manage', label: 'Manage announcements', icon: 'megaphone', permission: 'announcements:manage', feature: 'announcements', keywords: 'news create new announcement publish notice broadcast' },
-      { href: '/settings/helpdesk', label: 'Helpdesk settings', icon: 'life-buoy', permission: 'helpdesk:configure', feature: 'helpdesk' },
     ],
   },
   {
     label: 'Analytics & AI',
     items: [
-      { href: '/insights', label: 'HR analytics', icon: 'chart', permission: 'employees:read', beyondOwn: true },
-      { href: '/insights/universe', label: 'Workforce Universe', icon: 'orbit', permission: 'employees:read', beyondOwn: true, feature: 'workforce_universe' },
-      { href: '/insights/attrition', label: 'Attrition risk', icon: 'trending-down', permission: 'insights:attrition', feature: 'workforce_analytics' },
-      { href: '/automation', label: 'Automation Studio', icon: 'workflow', permission: 'automation:manage', feature: 'automation' },
-      { href: '/automation/runs', label: 'Workflow runs', icon: 'activity', permission: 'automation:manage', feature: 'automation' },
-      { href: '/settings/ai', label: 'AI settings', icon: 'sparkles', permission: 'ai:configure', feature: 'ai_copilot' },
-      { href: '/settings/ai/activity', label: 'AI activity', icon: 'bot', permission: 'audit:read', feature: 'ai_copilot' },
+      {
+        href: '', label: 'Analytics', icon: 'chart', children: [
+          { href: '/insights', label: 'HR analytics', icon: 'chart', permission: 'employees:read', beyondOwn: true },
+          { href: '/insights/universe', label: 'Workforce Universe', icon: 'orbit', permission: 'employees:read', beyondOwn: true, feature: 'workforce_universe' },
+          { href: '/insights/attrition', label: 'Attrition risk', icon: 'trending-down', permission: 'insights:attrition', feature: 'workforce_analytics' },
+        ],
+      },
+      {
+        href: '', label: 'Automation', icon: 'workflow', children: [
+          { href: '/automation', label: 'Automation Studio', icon: 'workflow', permission: 'automation:manage', feature: 'automation' },
+          { href: '/automation/runs', label: 'Workflow runs', icon: 'activity', permission: 'automation:manage', feature: 'automation' },
+        ],
+      },
     ],
   },
   {
@@ -170,45 +210,67 @@ export const NAV: NavGroup[] = [
     items: [
       { href: '/privacy', label: 'Privacy requests', icon: 'user-x', permission: 'privacy:manage' },
       { href: '/settings/audit', label: 'Audit trail', icon: 'scroll', permission: 'audit:read' },
-      { href: '/settings/password-resets', label: 'Password resets', icon: 'key', permission: 'users:read', superOnly: true },
     ],
   },
   {
+    // One Settings for everything (28 November 2026): the hub, and every settings page under it.
     label: 'Administration',
     items: [
-      { href: '/settings', label: 'All settings', icon: 'layout-grid', adminOnly: true },
-      { href: '/settings/workspace-permissions', label: 'Workspace Permissions', icon: 'shield-check', permission: 'hierarchy:read', adminOnly: true },
-      { href: '/settings/hr-admin', label: 'Super Workspace Admin', icon: 'layout-grid', permission: 'tenant:read' },
-      { href: '/settings/mobile-app', label: 'Mobile app', icon: 'smartphone', permission: 'mobileapp:manage', superOnly: true },
-      { href: '/settings/roles', label: 'Access levels', icon: 'shield', permission: 'roles:read' },
-      { href: '/settings/forms', label: 'Form management', icon: 'text-cursor-input', permission: 'fields:manage', keywords: 'forms fields custom fields extra fields add employee form employee profile leave request work email domain required hidden labels placeholder configuration' },
-      { href: '/settings/onboarding-documents', label: 'Onboarding document library', icon: 'clipboard-list', permission: 'documents:read', feature: 'documents', adminOnly: true, keywords: 'onboarding documents library templates categories mandatory optional' },
-      { href: '/settings/master-data', label: 'Master data', icon: 'list-tree', permission: 'org:read' },
-      { href: '/settings/single-sign-on', label: 'Single sign-on', icon: 'lock-keyhole', permission: 'security:manage', feature: 'sso' },
-      { href: '/settings/integrations', label: 'Integrations', icon: 'plug', permission: 'integrations:manage', feature: 'integrations_advanced' },
-      { href: '/settings/billing', label: 'Plan & billing', icon: 'credit-card', permission: 'billing:read' },
-      { href: '/settings/workspace', label: 'Workspace settings', icon: 'settings', permission: 'tenant:read' },
-      { href: '/settings/email', label: 'Email setup', icon: 'mail', permission: 'mail:configure', keywords: 'smtp mail server outgoing email invitation verification password reset' },
-      { href: '/settings/email-templates', label: 'Email templates', icon: 'mail', permission: 'mail:configure', keywords: 'email template html design branding import company layout' },
-      { href: '/settings/support', label: 'Support access', icon: 'life-buoy', permission: 'tenant:read' },
-      { href: '/settings/approvals', label: 'Approval settings', icon: 'inbox', permission: 'org:manage' },
-      { href: '/settings/notifications/organisation', label: 'Notification policy', icon: 'bell', superOnly: true },
-      { href: '/settings/document-access', label: 'Document access', icon: 'lock-keyhole', permission: 'documents:manage', feature: 'documents', superOnly: true },
-    ],
-  },
-  {
-    label: 'You',
-    items: [
-      { href: '/notifications', label: 'Notifications', icon: 'bell' },
-      { href: '/activity', label: 'Activity log', icon: 'history', keywords: 'login sign in ip location sessions access audit what I did' },
-      { href: '/settings/home', label: 'Home dashboard', icon: 'layout-grid', adminOnly: true, keywords: 'dashboard cards counts widgets home page setup' },
-      { href: '/settings/notifications', label: 'Notification settings', icon: 'bell' },
-      { href: '/settings/appearance', label: 'Appearance', icon: 'palette' },
-      { href: '/settings/signature', label: 'Email signature', icon: 'mail', feature: 'email_signatures' },
-      { href: '/settings/security', label: 'Security', icon: 'key' },
+      {
+        href: '/settings', label: 'Settings', icon: 'settings', ownPage: true, keywords: 'all settings configuration', children: [
+          // Workspace
+          { href: '/settings/workspace', label: 'Workspace settings', icon: 'settings', permission: 'tenant:read' },
+          { href: '/settings/workspace-permissions', label: 'Workspace Permissions', icon: 'shield-check', permission: 'hierarchy:read', adminOnly: true },
+          { href: '/settings/hr-admin', label: 'Super Workspace Admin', icon: 'layout-grid', permission: 'tenant:read' },
+          { href: '/settings/roles', label: 'Access levels', icon: 'shield', permission: 'roles:read' },
+          { href: '/settings/approvals', label: 'Approval settings', icon: 'inbox', permission: 'org:manage' },
+          { href: '/settings/billing', label: 'Plan & billing', icon: 'credit-card', permission: 'billing:read' },
+          { href: '/settings/mobile-app', label: 'Mobile app', icon: 'smartphone', permission: 'mobileapp:manage', superOnly: true },
+          { href: '/settings/notifications/organisation', label: 'Notification policy', icon: 'bell', superOnly: true },
+          { href: '/settings/email', label: 'Email setup', icon: 'mail', permission: 'mail:configure', keywords: 'smtp mail server outgoing email invitation verification password reset' },
+          { href: '/settings/email-templates', label: 'Email templates', icon: 'mail', permission: 'mail:configure', keywords: 'email template html design branding import company layout' },
+          { href: '/settings/support', label: 'Support access', icon: 'life-buoy', permission: 'tenant:read' },
+          // People and organization
+          { href: '/settings/master-data', label: 'Master data', icon: 'list-tree', permission: 'org:read' },
+          { href: '/settings/forms', label: 'Form management', icon: 'text-cursor-input', permission: 'fields:manage', keywords: 'forms fields custom fields extra fields add employee form employee profile leave request work email domain required hidden labels placeholder configuration' },
+          { href: '/settings/onboarding', label: 'Onboarding checklists', icon: 'list-checks', permission: 'employees:create', feature: 'onboarding' },
+          { href: '/settings/onboarding-documents', label: 'Onboarding document library', icon: 'clipboard-list', permission: 'documents:read', feature: 'documents', adminOnly: true, keywords: 'onboarding documents library templates categories mandatory optional' },
+          // Leave and attendance
+          { href: '/settings/leave', label: 'Holidays and leave rules', icon: 'calendar-range', permission: 'leave:allocate', feature: 'leave' },
+          { href: '/settings/attendance', label: 'Attendance settings', icon: 'timer', permission: 'attendance:configure', feature: 'attendance_basic' },
+          { href: '/attendance/offices', label: 'Office locations', icon: 'map-pin', permission: 'attendance:configure', feature: 'attendance_basic' },
+          { href: '/attendance/work-mode/settings', label: 'Office and home rules', icon: 'sliders', permission: 'attendance:configure', feature: 'attendance_basic' },
+          { href: '/settings/attendance-access', label: 'Attendance permissions', icon: 'shield-check', permission: 'hierarchy:manage', feature: 'attendance_basic', superOnly: true },
+          { href: '/settings/devices', label: 'Attendance devices', icon: 'fingerprint', permission: 'devices:manage', feature: 'attendance_advanced' },
+          // Modules
+          { href: '/settings/payroll', label: 'Payroll settings', icon: 'landmark', permission: 'payroll:configure', feature: 'payroll' },
+          { href: '/settings/appraisals', label: 'Appraisal forms & cycles', icon: 'award', permission: 'performance:configure', feature: 'performance' },
+          { href: '/settings/recruitment', label: 'Recruitment settings', icon: 'sliders', permission: 'recruitment:configure', feature: 'recruitment' },
+          { href: '/settings/helpdesk', label: 'Helpdesk settings', icon: 'life-buoy', permission: 'helpdesk:configure', feature: 'helpdesk' },
+          { href: '/settings/document-access', label: 'Document access', icon: 'lock-keyhole', permission: 'documents:manage', feature: 'documents', superOnly: true },
+          { href: '/settings/ai', label: 'AI settings', icon: 'sparkles', permission: 'ai:configure', feature: 'ai_copilot' },
+          { href: '/settings/ai/activity', label: 'AI activity', icon: 'bot', permission: 'audit:read', feature: 'ai_copilot' },
+          // Security
+          { href: '/settings/single-sign-on', label: 'Single sign-on', icon: 'lock-keyhole', permission: 'security:manage', feature: 'sso' },
+          { href: '/settings/integrations', label: 'Integrations', icon: 'plug', permission: 'integrations:manage', feature: 'integrations_advanced' },
+          { href: '/settings/password-resets', label: 'Password resets', icon: 'key', permission: 'users:read', superOnly: true },
+          // Your account
+          { href: '/settings/home', label: 'Home dashboard', icon: 'layout-grid', adminOnly: true, keywords: 'dashboard cards counts widgets home page setup' },
+          { href: '/settings/notifications', label: 'Notification settings', icon: 'bell' },
+          { href: '/settings/appearance', label: 'Appearance', icon: 'palette' },
+          { href: '/settings/signature', label: 'Email signature', icon: 'mail', feature: 'email_signatures' },
+          { href: '/settings/security', label: 'Security', icon: 'key' },
+          { href: '/activity', label: 'Activity log', icon: 'history', keywords: 'login sign in ip location sessions access audit what I did' },
+        ],
+      },
     ],
   },
 ];
+
+/** Every page in a menu, the entries merged under one entry included (an entry that is only a parent is left out). */
+export function flatNav(nav: NavGroup[]): NavItem[] {
+  return nav.flatMap((g) => g.items.flatMap((i) => (i.children ? [...(i.ownPage ? [i] : []), ...i.children] : [i])));
+}
 
 /** `download` marks a file download: shown as a plain link so the browser never prefetches (and builds) the file. */
 export interface QuickAction { key: string; label: string; href: string; icon: string; keywords?: string; download?: boolean }
@@ -259,7 +321,7 @@ export function accountLinks(me: Pick<Me, 'employee'>): { key: string; label: st
  * they switch back to My Workforce.
  */
 export const MY_DAY_HREFS: ReadonlySet<string> = new Set([
-  '/', '/tasks', '/announcements', '/communication', '/help', '/attendance', '/leave', '/payslips', '/expenses', '/appraisal', '/assets/mine',
+  '/', '/requests', '/approvals', '/settings', '/tasks', '/announcements', '/communication', '/help', '/attendance', '/leave', '/payslips', '/expenses', '/appraisal', '/assets/mine',
   '/goals', '/learning', '/onboarding-documents/mine', '/recognition', '/surveys', '/notifications', '/activity', '/settings/notifications', '/settings/appearance', '/settings/signature',
   '/settings/security', '/settings/home', '/profile',
 ]);
@@ -267,9 +329,17 @@ export const MY_DAY_HREFS: ReadonlySet<string> = new Set([
 /** People who look after a workforce (Super Workspace and HR Workspace with more than their own record) can switch views. */
 export const canSwitchWorkView = (me: Me) => isAdminLevel(me) && Boolean(me.employee) && (me.permissions['employees:read'] ?? 'own') !== 'own';
 
-/** The menu for My Day: only the person's own pages, in the same groups. */
+/** The menu for My Day: only the person's own pages, in the same groups (merged entries keep their own pages). */
 export function myDayNav(nav: NavGroup[]): NavGroup[] {
-  return nav.map((g) => ({ ...g, items: g.items.filter((i) => MY_DAY_HREFS.has(i.href)) })).filter((g) => g.items.length);
+  return nav.map((g) => ({
+    ...g,
+    items: g.items.flatMap((i): NavItem[] => {
+      if (!i.children) return MY_DAY_HREFS.has(i.href) ? [i] : [];
+      const kids = i.children.filter((c) => MY_DAY_HREFS.has(c.href));
+      if (!kids.length && !(i.ownPage && MY_DAY_HREFS.has(i.href))) return [];
+      return [{ ...i, href: i.ownPage ? i.href : kids[0]!.href, children: kids }];
+    }),
+  })).filter((g) => g.items.length);
 }
 
 /**
@@ -297,19 +367,23 @@ export function visibleNav(me: Me): NavGroup[] {
     (!i.permission || (me.permissions[i.permission] && !(i.beyondOwn && me.permissions[i.permission] === 'own'))) && (!i.anyPermission || i.anyPermission.some((p) => me.permissions[p] && me.permissions[p] !== 'own')) && !(i.hiddenWith && me.permissions[i.hiddenWith]) && !(i.superOnly && !me.levels?.super) && !(i.adminOnly && !isAdminLevel(me)) && !(i.candidateCrm && !me.candidateCrm);
   // A billing admin also sees each module the plan lacks once, with a lock, so they know it exists and can upgrade.
   const upsell = me.permissions['billing:manage'] ? new Set<string>() : null;
-  return NAV.map((g) => ({
-    ...g,
-    items: g.items.flatMap((i): NavItem[] => {
-      if (!allowed(i)) return [];
-      // Feature management: a page switched off at any level (Console, Super Workspace, HR Workspace) leaves the menu.
-      const part = partForWebPath(i.href);
-      if (part && me.features.includes(part.feature) && !me.features.includes(part.key)) return [];
-      if (!i.feature || me.features.includes(i.feature)) return [i];
-      if (!upsell || upsell.has(i.feature) || NOT_SOLD.has(i.feature)) return [];
-      upsell.add(i.feature);
-      return [{ ...i, href: `/settings/billing?upgrade=${i.feature}`, locked: true }];
-    }),
-  })).filter((g) => g.items.length);
+  const keep = (i: NavItem): NavItem[] => {
+    if (i.children) {
+      const kids = i.children.flatMap(keep);
+      if (!kids.length && !i.ownPage) return [];
+      // A merged entry opens its first page the person may open (or its own page).
+      return [{ ...i, href: i.ownPage ? i.href : (kids.find((k) => !k.locked) ?? kids[0]!).href, children: kids }];
+    }
+    if (!allowed(i)) return [];
+    // Feature management: a page switched off at any level (Console, Super Workspace, HR Workspace) leaves the menu.
+    const part = partForWebPath(i.href);
+    if (part && me.features.includes(part.feature) && !me.features.includes(part.key)) return [];
+    if (!i.feature || me.features.includes(i.feature)) return [i];
+    if (!upsell || upsell.has(i.feature) || NOT_SOLD.has(i.feature)) return [];
+    upsell.add(i.feature);
+    return [{ ...i, href: `/settings/billing?upgrade=${i.feature}`, locked: true }];
+  };
+  return NAV.map((g) => ({ ...g, items: g.items.flatMap(keep) })).filter((g) => g.items.length);
 }
 
 /** Modules agreed with SAMPLEDGE case by case rather than bought on Plan & billing. */

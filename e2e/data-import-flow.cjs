@@ -225,7 +225,7 @@ async function signIn(b, email) {
     await sup.goto(BASE + '/imports');
     await sup.waitForTimeout(1000);
     if (await sup.getByText('What do you want to import?').count()) throw new Error('the HR Workspace admin can still import after the switch went off');
-    if (await sup.getByRole('link', { name: 'Data import' }).count()) throw new Error('Data import still in the HR Workspace admin’s menu');
+    if (await sup.locator('nav[aria-label="Main"] a[href="/imports"]').count()) throw new Error('Data import still in the HR Workspace admin’s menu');
     ok('an HR Workspace admin imports until the Super Workspace switches import off for that HR Workspace');
     await owner.goto(wsUrl);
     await owner.getByRole('button', { name: 'Archive' }).click();
@@ -236,7 +236,7 @@ async function signIn(b, email) {
 
     // 7. Employee Workspace.
     const neha = await signIn(b, 'operator2@demo.crew.local');
-    if (await neha.getByRole('link', { name: 'Data import' }).count()) throw new Error('Data import in an employee’s menu');
+    if (await neha.locator('nav[aria-label="Main"] a[href="/imports"]').count()) throw new Error('Data import in an employee’s menu');
     await neha.goto(BASE + '/imports');
     await neha.waitForTimeout(1000);
     if (await neha.getByText('What do you want to import?').count()) throw new Error('an employee opened Data import');

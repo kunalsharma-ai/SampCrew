@@ -7,6 +7,7 @@ import Link from 'next/link';
 import { ApiError, api, load } from '@/lib/api';
 import { allowed, ModuleOverview } from '@/components/module-overview';
 import { can } from '@/lib/nav';
+import { inMyDay } from '@/lib/my-day';
 import { dateLabel, monthBounds, resolvePeriod } from '@/lib/attendance-period';
 import { hm, todayIn } from '@/lib/time';
 import type { AttendanceMonth, AttendanceToday, LateMonth, Me } from '@/lib/types';
@@ -51,6 +52,7 @@ export default async function AttendancePage({ searchParams }: { searchParams: P
   const sp = await searchParams;
   const me = await load<Me>('/me');
   if (sp.employeeId) return <OtherPerson me={me} sp={sp} />;
+  const myDay = await inMyDay(me);
   const period = resolvePeriod(sp, me.tenant.timezone);
   let today: AttendanceToday | null = null;
   let noRecord = false;
@@ -76,8 +78,8 @@ export default async function AttendancePage({ searchParams }: { searchParams: P
     <>
       <PageHeader
         title="Attendance"
-        eyebrow={level}
-        description={`${period.label}. Your own attendance first${caps.employees ? ', then the attendance you look after' : ''}.`}
+        eyebrow={myDay ? 'Employee Workspace · My Day' : level}
+        description={myDay ? `${period.label}. Your own attendance only. Switch to your workforce view in the menu to see the people you look after.` : `${period.label}. Your own attendance first${caps.employees ? ', then the attendance you look after' : ''}.`}
         actions={caps.export && o.me ? <ExportButton period={period} filters={{ employeeId: o.me.employeeId }} label="Export my attendance" /> : undefined}
       />
       <RealtimeRefresh />
@@ -138,7 +140,7 @@ export default async function AttendancePage({ searchParams }: { searchParams: P
       </section>
 
       {/* 2. The attendance this person looks after (Super and HR Workspace only). */}
-      {caps.employees && o.cards && (
+      {caps.employees && o.cards && !myDay && (
         <section aria-labelledby="dashboard" className="grid gap-6" data-testid="attendance-dashboard">
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div>

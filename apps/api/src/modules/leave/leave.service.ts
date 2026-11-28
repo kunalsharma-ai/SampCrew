@@ -62,6 +62,22 @@ const TYPE_FIELDS = {
 } as const;
 
 const iso = (d: unknown) => (d ? new Date(d as string).toISOString() : null);
+const halfLabel = (h: unknown, end: boolean) => (h === 'full' || !h ? '' : end ? ' (first half)' : ' (second half)');
+/** The rows of a leave application form saved on a request, for the approver's view. */
+function applicationFormRows(f: Doc, days: string): { label: string; value: string }[] {
+  const a = (f.applicant ?? {}) as Doc;
+  return [
+    { label: 'Employee code', value: a.employeeCode ?? '—' }, { label: 'Full name', value: a.name ?? '—' },
+    { label: 'Designation', value: a.designation ?? '—' }, { label: 'Department', value: a.department ?? '—' },
+    { label: 'Reporting manager', value: (f.reportingManager as Doc | null)?.name ?? '—' }, { label: 'HR manager', value: (f.hrManager as Doc | null)?.name ?? '—' },
+    { label: 'Leave type', value: (f.leaveType as Doc | null)?.name ?? '—' }, { label: 'Number of days', value: days },
+    { label: 'From', value: `${f.startDate}${halfLabel(f.startHalf, false)}` }, { label: 'To', value: `${f.endDate}${halfLabel(f.endHalf, true)}` },
+    ...(f.contactDuringLeave ? [{ label: 'Contact during leave', value: String(f.contactDuringLeave) }] : []),
+    ...(f.handoverTo ? [{ label: 'Work handed over to', value: String(f.handoverTo) }] : []),
+    { label: 'Pre-approved request', value: String(f.requestRef ?? '') },
+    { label: 'Reason', value: String(f.reason ?? '') },
+  ];
+}
 const range = (a: string, b: string) => (a === b ? a : `${a} to ${b}`);
 
 /**
@@ -131,6 +147,8 @@ export class LeaveService implements OnModuleInit {
         return {
           ...(d ? { sameDayLeave: d } : {}),
           ...(r ? { leaveReference: leaveRef(id), approvalRoute: r.approval_route ?? null, approvalRouteLabel: r.approval_route ? LEAVE_AUTHORITY_LABELS[r.approval_route as LeaveAuthority] : null } : {}),
+          // The leave application form made from an approved request (Requests section), as the approver reads it.
+          ...(r?.application_form ? { requestForm: applicationFormRows(r.application_form as Doc, String(r.days)) } : {}),
         };
       },
       documents: async (tx, id) => {
@@ -713,6 +731,11 @@ export class LeaveService implements OnModuleInit {
     return out.sort((a, b2) => cmp(a.name, b2.name));
   }
 
+  /** A person's leave balances in the caller's transaction (the leave application form made from a request). */
+  async balancesIn(tx: TenantTx, employeeId: string, year: number) {
+    return this.balanceRows(tx, await this.employee(tx, employeeId), year);
+  }
+
   /** Every ledger line behind a balance, so any number on screen can be explained. */
   async ledger(employeeId: string, leaveTypeId: string, year: number) {
     return this.db.tenant(async (tx) => {
@@ -836,7 +859,7 @@ export class LeaveService implements OnModuleInit {
    * Checks a draft against the type, its policy, the person's allocation, the calendar and the balance, and works out
    * the approval route. When it changes an existing request, that request's days count as available again.
    */
-  private async evaluate(tx: TenantTx, e: EmployeeLite, input: Omit<LeaveRequestInput, 'employeeId'>, onBehalf: boolean, replacing?: RequestRow) {
+  private async evaluate(tx: TenantTx, e: EmployeeLite, input: Omit<LeaveRequestInput, 'employeeId'>, onBehalf: boolean, replacing?: RequestRow, looped = false) {
     const type = await tx.collection<Doc>('leave_types').findOne({ id: input.leaveTypeId });
     if (!type || type.archived_at) throw Errors.badRequest('invalid_leave_type', type ? `${type.name} is no longer active` : 'Leave type not found');
     const book = await loadBook(tx);
@@ -891,10 +914,12 @@ export class LeaveService implements OnModuleInit {
 
     // Approval route.
     const opts = await this.routeOptions(tx, book, ent, e, daysH);
-    if (!opts.routes.length) throw Errors.badRequest('no_approval_route', `Nobody is set to review ${type.name} for you. Ask the Super Workspace to make it available to your HR Workspace or to allow Super Workspace approval.`);
+    // An application made from an approved request goes to the people looped into it, so it needs no route.
+    if (!opts.routes.length && !looped) throw Errors.badRequest('no_approval_route', `Nobody is set to review ${type.name} for you. Ask the Super Workspace to make it available to your HR Workspace or to allow Super Workspace approval.`);
     const allowed = opts.routes.map((r) => r.route);
     let route: LeaveAuthority;
-    if (input.approvalRoute) {
+    if (looped) route = allowed[0] ?? 'hr';
+    else if (input.approvalRoute) {
       if (!allowed.includes(input.approvalRoute)) {
         const why = input.approvalRoute === 'hr' && !opts.authorities.hr ? `no HR Workspace is assigned to ${type.name}` : `${type.name} must go to ${allowed.map((r) => LEAVE_AUTHORITY_LABELS[r]).join(' or ')}`;
         throw Errors.badRequest('route_not_allowed', `You cannot send this to ${LEAVE_AUTHORITY_LABELS[input.approvalRoute]}: ${why}.`);
@@ -917,7 +942,7 @@ export class LeaveService implements OnModuleInit {
         policy: { maxDaysPerRequest: p.maxDaysPerRequest, maxConsecutiveDays: p.maxConsecutiveDays, minDaysPerRequest: p.minDaysPerRequest, minNoticeDays: p.minNoticeDays, allowHalfDay: Boolean(type.allow_half_day), allowMultiDay: p.allowMultiDay },
         routes: opts.routes, employeeChooses: opts.employeeChooses, order: opts.order, managerFirst: opts.managerFirst,
         route, routeLabel: LEAVE_AUTHORITY_LABELS[route],
-        reviewers: opts.routes.find((r) => r.route === route)!.reviewers,
+        reviewers: opts.routes.find((r) => r.route === route)?.reviewers ?? [],
       },
     };
   }
@@ -944,14 +969,23 @@ export class LeaveService implements OnModuleInit {
   }
 
   async request(input: LeaveRequestInput) {
+    return this.db.tenant((tx) => this.requestIn(tx, input));
+  }
+
+  /**
+   * Files a leave application in the caller's transaction. `looped`: the application made from an approved request
+   * (Requests section): it goes to the people looped into that request, all at once, with the leave application form
+   * saved on it; the approvers get the form by email from the Requests module, so the engine does not email them.
+   */
+  async requestIn(tx: TenantTx, input: LeaveRequestInput, looped?: { staffRequestId: string; approverMembershipIds: string[]; form: Record<string, unknown> }) {
     const actor = requestContext.tenantActor();
-    return this.db.tenant(async (tx) => {
+    {
       const { e, onBehalf } = await this.requestTarget(tx, input.employeeId);
       // The Leave request form as the Super Workspace set it up (issue #91), e.g. a required reason.
       await checkFormRules(tx, 'leave_request', input as Record<string, unknown>, ['reason']);
       // One request at a time per person, so the overlap and balance checks see every other request.
       await tx.collection('employees').lock({ id: e.id });
-      const ev = await this.evaluate(tx, e, input, onBehalf);
+      const ev = await this.evaluate(tx, e, input, onBehalf, undefined, Boolean(looped));
       await this.checkDocuments(tx, input.documentIds ?? [], ev.docsRequired);
       if (await tx.collection('leave_requests').exists({ employee_id: e.id, status: { $in: ['pending', 'approved'] }, start_date: { $lte: input.endDate }, end_date: { $gte: input.startDate } })) {
         throw Errors.conflict('overlapping_leave', 'There is already a pending or approved request on these dates');
@@ -960,16 +994,19 @@ export class LeaveService implements OnModuleInit {
       const row = await tx.collection('leave_requests').insert({
         employee_id: e.id, leave_type_id: input.leaveTypeId, start_date: input.startDate, end_date: input.endDate, start_half: input.startHalf, end_half: input.endHalf,
         days: fromH(ev.daysH), reason: input.reason ?? null, requested_by_membership_id: actor.membershipId,
-        approval_route: ev.route, approval_order: ev.route === 'both' ? ev.opts.order : null, policy_version: (type.version as number | undefined) ?? 1,
+        approval_route: looped ? null : ev.route, approval_order: !looped && ev.route === 'both' ? ev.opts.order : null, policy_version: (type.version as number | undefined) ?? 1,
         policy_snapshot: { code: type.code, name: type.name, policy: ev.ent.policy, approval: ev.ent.approval, annualEntitlement: ev.ent.annualEntitlement, reviewers: ev.view.reviewers },
         document_ids: input.documentIds ?? [], hr_workspace_id: e.hr_workspace_id,
-        reviewer_hr_workspace_id: ev.route !== 'super' ? ev.opts.authorities.hr?.hrWorkspaceId ?? null : null,
-        reviewer_hr_company: ev.route !== 'super' ? Boolean(ev.opts.authorities.hr?.company) : false,
+        reviewer_hr_workspace_id: !looped && ev.route !== 'super' ? ev.opts.authorities.hr?.hrWorkspaceId ?? null : null,
+        reviewer_hr_company: !looped && ev.route !== 'super' ? Boolean(ev.opts.authorities.hr?.company) : false,
+        ...(looped ? { staff_request_id: looped.staffRequestId, application_form: looped.form } : {}),
       });
       const sameDay = await this.discipline.onLeaveRequested(tx, { id: row.id as string, employee_id: e.id, leave_type_id: input.leaveTypeId, start_date: input.startDate });
       const approvalId = await this.approvals.start(tx, {
-        resourceType: 'leave_request', resourceId: row.id, subjectEmployeeId: e.id, steps: this.stepsFor(ev.route, ev),
-        summary: `${e.name}: ${type.name}, ${range(input.startDate, input.endDate)} (${fromH(ev.daysH)} days), to ${LEAVE_AUTHORITY_LABELS[ev.route]}${input.reason ? `. "${input.reason}"` : ''}${sameDay ? ` ${sameDay}` : ''}`,
+        resourceType: 'leave_request', resourceId: row.id, subjectEmployeeId: e.id,
+        steps: looped ? looped.approverMembershipIds.map((m) => ({ type: 'person' as const, membershipId: m, stage: 1 })) : this.stepsFor(ev.route, ev),
+        emailApprovers: !looped,
+        summary: `${e.name}: ${type.name}, ${range(input.startDate, input.endDate)} (${fromH(ev.daysH)} days), to ${looped ? 'the people looped into the request' : LEAVE_AUTHORITY_LABELS[ev.route]}${input.reason ? `. "${input.reason}"` : ''}${sameDay ? ` ${sameDay}` : ''}`,
         meta: { leaveTypeCode: type.code, leaveTypeName: type.name, paid: Boolean(type.paid), halfDay: input.startHalf !== 'full' || input.endHalf !== 'full' },
       });
       await tx.collection('leave_requests').updateOne({ id: row.id }, { $set: { approval_request_id: approvalId } });
@@ -978,11 +1015,11 @@ export class LeaveService implements OnModuleInit {
       await this.audit.record(tx, {
         action: 'leave_request.submitted', resourceType: 'leave_request', resourceId: row.id,
         changes: { employeeId: e.id, leaveTypeId: input.leaveTypeId, startDate: input.startDate, endDate: input.endDate, days: fromH(ev.daysH), route: ev.route },
-        metadata: { onBehalf, reference: leaveRef(row.id as string) },
+        metadata: { onBehalf, reference: leaveRef(row.id as string), ...(looped ? { staffRequestId: looped.staffRequestId } : {}) },
       });
       await this.outbox.publish(tx, actor.tenantId, 'leave.requested', { leaveRequestId: row.id, employeeId: e.id });
       return this.loadRequest(tx, row.id as string);
-    });
+    }
   }
 
   private async onApproved(tx: TenantTx, req: ApprovalRequestRow) {
@@ -1277,7 +1314,8 @@ export class LeaveService implements OnModuleInit {
           leaveTypeActive: !t.archived_at, color: t.color as string,
           startDate: r.start_date as string, endDate: r.end_date as string, startHalf: r.start_half, endHalf: r.end_half, days: r.days as string, reason: r.reason ?? null,
           status: r.status as string, approvalId: (r.approval_request_id as string | null) ?? null,
-          approvalRoute: (r.approval_route as LeaveAuthority | null) ?? null, approvalRouteLabel: r.approval_route ? LEAVE_AUTHORITY_LABELS[r.approval_route as LeaveAuthority] : 'Earlier approval chain',
+          approvalRoute: (r.approval_route as LeaveAuthority | null) ?? null, approvalRouteLabel: r.approval_route ? LEAVE_AUTHORITY_LABELS[r.approval_route as LeaveAuthority] : r.staff_request_id ? 'The people looped into the request' : 'Earlier approval chain',
+          staffRequestId: (r.staff_request_id as string | null) ?? null, applicationForm: (r.application_form as Record<string, unknown> | null) ?? null,
           approvalOrder: (r.approval_order as string | null) ?? null,
           reviewerHrWorkspaceName: r.reviewer_hr_workspace_id ? hrNames.get(r.reviewer_hr_workspace_id) ?? null : r.reviewer_hr_company ? 'Company HR team' : null,
           authorities, documentCount: ((r.document_ids as string[] | undefined) ?? []).length,

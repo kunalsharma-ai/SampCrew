@@ -3,6 +3,7 @@ import { Alert, PageHeader } from '@crew/ui';
 import type { Metadata } from 'next';
 import { ApiError, api, load, loadOptional } from '@/lib/api';
 import { allowed, ModuleOverview } from '@/components/module-overview';
+import { inMyDay } from '@/lib/my-day';
 import { can } from '@/lib/nav';
 import { todayIn } from '@/lib/time';
 import type { LeaveCalendarData, LeaveMine, LeaveRequest, Me } from '@/lib/types';
@@ -20,6 +21,8 @@ export const metadata: Metadata = { title: 'Leave' };
 export default async function LeavePage({ searchParams }: { searchParams: Promise<{ month?: string; sent?: string; view?: string; year?: string }> }) {
   const sp = await searchParams;
   const me = await load<Me>('/me');
+  // My Day: the person's own leave only, without the HR shortcuts.
+  const admin = can(me, 'leave:allocate') && !(await inMyDay(me));
   let mine: LeaveMine | null = null;
   try {
     mine = await api<LeaveMine>('/leave/mine');
@@ -31,7 +34,7 @@ export default async function LeavePage({ searchParams }: { searchParams: Promis
       <>
         <PageHeader title="Leave" />
         <Alert tone="info" title="No employee record linked">Your login is not linked to an employee record yet, so there is no leave balance to show. Ask your HR Workspace to link it from your employee profile.</Alert>
-        {can(me, 'leave:allocate') && <Alert tone="info" className="mt-4">Leave types, quantities and approvals are on <a className="underline" href="/leave/manage">Leave management</a>.</Alert>}
+        {admin && <Alert tone="info" className="mt-4">Leave types, quantities and approvals are on <a className="underline" href="/leave/manage">Leave management</a>.</Alert>}
       </>
     );
   }
@@ -78,7 +81,7 @@ export default async function LeavePage({ searchParams }: { searchParams: Promis
         {balances.balances.length === 0 && (
           <Alert tone="warning" title="No leave types apply to you yet">
             No leave type is visible to you yet. One appears here as soon as the Super Workspace or your HR Workspace creates it for your workspace.
-            {can(me, 'leave:allocate') && <> Create one on <a className="underline" href="/leave/manage?tab=types">Leave management</a>.</>}
+            {admin && <> Create one on <a className="underline" href="/leave/manage?tab=types">Leave management</a>.</>}
           </Alert>
         )}
         {/* Issue #91 point 2: the count cards, then My requests (collapsible), then the calendar, then My leave types last. */}

@@ -9,7 +9,7 @@ import { decideAction } from '../../leave/actions';
 import { STATUS_LABEL, STATUS_TONE } from '../approvals-board';
 import type { ApprovalDetail } from '../types';
 
-const STEP_KIND: Record<string, string> = { manager: 'Reporting manager', skip_level_manager: "Manager's manager", role: 'Role' };
+const STEP_KIND: Record<string, string> = { manager: 'Reporting manager', skip_level_manager: "Manager's manager", role: 'Role', person: 'Looped in', hr_workspace: 'HR Workspace', super_workspace: 'Super Workspace' };
 const at = (iso: string | null) => (iso ? new Date(iso).toLocaleString(undefined, { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '');
 
 export function ApprovalDetailView({ d }: { d: ApprovalDetail }) {
@@ -28,6 +28,8 @@ export function ApprovalDetailView({ d }: { d: ApprovalDetail }) {
     if (r.ok) router.refresh();
   });
   const sameDay = (d.details as { sameDayLeave?: { appliedOn: string | null } } | null)?.sameDayLeave;
+  // Requests (and the leave application made from one) carry their form: shown as the approver reads it.
+  const requestForm = (d.details as { requestForm?: { label: string; value: string }[] } | null)?.requestForm;
   return (
     <>
       <Link href={d.mine ? '/approvals?view=mine' : '/approvals'} className="mb-3 inline-flex items-center gap-1 text-xs font-medium text-fg-muted hover:text-fg"><ArrowLeft className="size-3.5" /> Approvals</Link>
@@ -53,6 +55,19 @@ export function ApprovalDetailView({ d }: { d: ApprovalDetail }) {
               {d.link && <Link href={d.link} className="mt-4 inline-block text-xs font-medium text-accent hover:underline">Open the record</Link>}
             </CardBody>
           </Card>
+          {requestForm && (
+            <section aria-label="What was asked" className="rounded-xl border border-accent/25 bg-accent-subtle/40 p-4" data-testid="request-form">
+              <h2 className="mb-3 text-[0.8125rem] font-semibold text-fg">What was asked</h2>
+              <dl className="grid gap-3 text-[0.8125rem] sm:grid-cols-2">
+                {requestForm.map((f) => (
+                  <div key={f.label} className={f.label === 'Reason' ? 'sm:col-span-2' : undefined}>
+                    <dt className="text-xs text-fg-subtle">{f.label}</dt>
+                    <dd className="whitespace-pre-line break-words font-medium text-fg">{f.value}</dd>
+                  </div>
+                ))}
+              </dl>
+            </section>
+          )}
           <Card>
             <CardHeader title="Supporting documents" />
             <CardBody>
@@ -63,9 +78,9 @@ export function ApprovalDetailView({ d }: { d: ApprovalDetail }) {
           </Card>
           {d.canDecide && d.status === 'pending' && (
             <Card>
-              <CardHeader title="Your decision" description="Remarks are shared with the person who asked. They are needed when you reject." />
+              <CardHeader title="Your decision" description="Your comment is shared with the person who asked. A comment is needed when you reject." />
               <CardBody className="grid gap-3">
-                <Textarea aria-label="Remarks" placeholder="Remarks" value={comment} onChange={(e) => setComment(e.target.value)} maxLength={1000} rows={3} />
+                <Textarea aria-label="Remarks" placeholder="Write a comment (needed to reject)" value={comment} onChange={(e) => setComment(e.target.value)} maxLength={1000} rows={3} />
                 <div className="flex gap-2">
                   <Button variant="secondary" loading={pending} onClick={() => decide('reject')}><X className="size-4" /> Reject</Button>
                   <Button loading={pending} onClick={() => decide('approve')}><Check className="size-4" /> Approve</Button>

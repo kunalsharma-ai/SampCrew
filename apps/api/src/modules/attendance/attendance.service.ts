@@ -1196,6 +1196,8 @@ export class AttendanceService implements OnModuleInit {
 /** People with approved work from home covering a date. */
 async function remoteOn(tx: TenantTx, employeeIds: string[], date: string): Promise<Set<string>> {
   const types = await tx.collection('leave_types').distinct<string>('id', { kind: 'wfh' });
-  if (!types.length) return new Set();
-  return new Set(await tx.collection('leave_requests').distinct<string>('employee_id', { employee_id: { $in: employeeIds }, status: 'approved', leave_type_id: { $in: types }, start_date: { $lte: date }, end_date: { $gte: date } }));
+  // Approved work from home and on-duty requests from the Requests section count too.
+  const asked = await tx.collection('staff_requests').distinct<string>('employee_id', { employee_id: { $in: employeeIds }, kind: { $in: ['wfh', 'on_duty'] }, status: 'approved', start_date: { $lte: date }, end_date: { $gte: date } });
+  if (!types.length) return new Set(asked);
+  return new Set([...asked, ...(await tx.collection('leave_requests').distinct<string>('employee_id', { employee_id: { $in: employeeIds }, status: 'approved', leave_type_id: { $in: types }, start_date: { $lte: date }, end_date: { $gte: date } }))]);
 }

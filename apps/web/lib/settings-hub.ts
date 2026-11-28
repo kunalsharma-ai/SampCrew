@@ -1,4 +1,4 @@
-import { type NavItem, visibleNav } from './nav';
+import { type NavItem, flatNav, visibleNav } from './nav';
 import type { Me } from './types';
 
 /**
@@ -27,6 +27,7 @@ const PAGES: Record<string, { category: string; description: string; keywords?: 
   '/settings/billing': { category: 'workspace', description: 'Your plan, invoices and add-ons.', keywords: 'plan invoice subscription upgrade' },
   '/settings/support': { category: 'workspace', description: 'Let SampCrew support look at your workspace, for a while.', keywords: 'help access' },
   '/settings/mobile-app': { category: 'workspace', description: 'What the mobile app shows to your people.', keywords: 'phone android ios' },
+  '/settings/notifications/organisation': { category: 'workspace', description: 'Which notifications the whole company gets, and which ones people may turn off.', keywords: 'notification policy company alerts' },
   '/settings/master-data': { category: 'people', description: 'Departments, designations, locations and other lists.', keywords: 'department designation location lists' },
   '/settings/forms': { category: 'people', description: 'Every form in one place: built-in fields shown, required, renamed; custom fields added, hidden or removed.', keywords: 'fields form custom extra add employee profile leave request work email domain' },
   '/settings/onboarding': { category: 'people', description: 'Checklists new joiners and their HR work through.', keywords: 'joiner checklist' },
@@ -35,6 +36,8 @@ const PAGES: Record<string, { category: string; description: string; keywords?: 
   '/settings/leave': { category: 'leave', description: 'Holiday calendars and the same-day leave rule.', keywords: 'holiday calendar weekly off' },
   '/settings/attendance': { category: 'attendance', description: 'Shifts, late marks, rewards and attendance rules.', keywords: 'shift late punch' },
   '/settings/attendance-access': { category: 'attendance', description: 'Which HR Workspaces see and export each other’s attendance.', keywords: 'export visibility' },
+  '/attendance/offices': { category: 'attendance', description: 'Office addresses and the check-in radius around each.', keywords: 'office location geofence radius map' },
+  '/attendance/work-mode/settings': { category: 'attendance', description: 'Office, home and hybrid rules, and when a day needs checking.', keywords: 'wfh work from home hybrid office rules' },
   '/settings/devices': { category: 'attendance', description: 'Biometric and kiosk devices.', keywords: 'biometric kiosk' },
   '/settings/payroll': { category: 'modules', description: 'Pay components, statutory schemes and payroll rules.', keywords: 'salary pf esi tax' },
   '/settings/appraisals': { category: 'modules', description: 'Appraisal forms and review cycles.', keywords: 'performance review' },
@@ -59,7 +62,7 @@ const PAGES: Record<string, { category: string; description: string; keywords?: 
 
 export function settingsHub(me: Me): SettingsCategory[] {
   const seen = new Set<string>();
-  const items = visibleNav(me).flatMap((g) => g.items).filter((i) => PAGES[i.href] && !i.locked && !seen.has(i.href) && seen.add(i.href));
+  const items = flatNav(visibleNav(me)).filter((i) => PAGES[i.href] && !i.locked && !seen.has(i.href) && seen.add(i.href));
   return CATEGORIES.map((c) => ({
     ...c,
     items: items.filter((i) => PAGES[i.href]!.category === c.key).map((i) => ({ ...i, description: PAGES[i.href]!.description, keywords: PAGES[i.href]!.keywords })),

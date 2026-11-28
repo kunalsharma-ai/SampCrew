@@ -259,6 +259,11 @@ export class AttendanceDaysService {
         out.set(d, d === r.start_date && r.start_half === 'second_half' ? 'second_half' : d === r.end_date && r.end_half === 'first_half' ? 'first_half' : 'full');
       }
     }
+    // Approved work from home and on-duty requests (Requests section) count like approved work from home.
+    const asked = await tx.collection<{ start_date: string; end_date: string }>('staff_requests').find({ employee_id: employeeId, kind: { $in: ['wfh', 'on_duty'] }, status: 'approved', end_date: { $gte: from }, start_date: { $lte: to } }, { projection: { start_date: 1, end_date: 1 } });
+    for (const r of asked) {
+      for (let d = r.start_date; d <= r.end_date; d = addDays(d, 1)) if (d >= from && d <= to && !remote.has(d)) remote.set(d, 'full');
+    }
     return { leave, remote };
   }
 

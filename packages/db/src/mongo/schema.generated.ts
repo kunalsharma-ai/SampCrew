@@ -1029,7 +1029,7 @@ export const TABLES: Record<string, TableSpec> = {
       // Set when the step waited too long: the Super Workspace was told and may decide it too.
       escalated_at: {"type": "timestamp"},
       id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
-      kind: {"enum": ["manager", "skip_level_manager", "role", "hr_workspace", "super_workspace"], "required": true, "type": "string"},
+      kind: {"enum": ["manager", "skip_level_manager", "role", "hr_workspace", "super_workspace", "person"], "required": true, "type": "string"},
       request_id: {"required": true, "type": "uuid"},
       seq: {"required": true, "type": "int"},
       // Steps with the same stage are decided at the same time (any order); the next stage starts when all are approved.
@@ -5421,6 +5421,10 @@ export const TABLES: Record<string, TableSpec> = {
       reason: {"type": "string"},
       // A change to approved leave is a new request; approving it cancels the one it replaces.
       replaces_request_id: {"type": "uuid"},
+      // The approved request (Requests section) this leave application was made from; its looped people approve it.
+      staff_request_id: {"type": "uuid"},
+      // The leave application form as it was sent: employee code, name, designation, manager, HR, contact, handover.
+      application_form: {"type": "json"},
       requested_by_membership_id: {"type": "uuid"},
       // The HR Workspace that reviews it when HR is on the route (null with reviewer_hr_company: the company's HR team).
       reviewer_hr_company: {"type": "bool"},
@@ -9551,6 +9555,49 @@ export const TABLES: Record<string, TableSpec> = {
       {"cols": ["tenant_id", "employee_id"], "onDelete": "cascade", "ref": "employees", "refCols": ["tenant_id", "id"]},
     ],
     indexes: [{"cols": [{"col": "tenant_id"}, {"col": "status"}, {"col": "created_at", "desc": true}], "name": "comp_off_requests_status"}],
+    checks: [],
+  },
+  staff_requests: {
+    // A request raised in the Requests section (28 November 2026) by anyone at any level: work from home, early
+    // leave, late coming, comp off, leave, half day, on duty, shift change or other. It goes to the people the
+    // requester looped in (approval_steps of kind person, all in one stage); each decides with a comment.
+    access: "tenant", grants: ["insert", "select", "update"], touch: true,
+    columns: {
+      id: {"default": {"fn": "uuid"}, "required": true, "type": "uuid"},
+      tenant_id: {"required": true, "type": "uuid"},
+      kind: {"enum": ["wfh", "early_leave", "late_coming", "comp_off", "leave", "half_day", "on_duty", "shift_change", "other"], "required": true, "type": "string"},
+      title: {"type": "string"},
+      reason: {"required": true, "type": "string"},
+      start_date: {"required": true, "type": "date"},
+      end_date: {"required": true, "type": "date"},
+      start_time: {"type": "string"},
+      end_time: {"type": "string"},
+      worked_on: {"type": "date"},
+      leave_type_id: {"type": "uuid"},
+      requester_membership_id: {"required": true, "type": "uuid"},
+      // The requester's employee record, when they have one (attendance and leave use it).
+      employee_id: {"type": "uuid"},
+      approver_membership_ids: {"default": {"json": []}, "required": true, "type": "uuid[]"},
+      status: {"default": "pending", "enum": ["pending", "approved", "rejected", "cancelled"], "required": true, "type": "string"},
+      approval_request_id: {"type": "uuid"},
+      leave_request_id: {"type": "uuid"},
+      decided_at: {"type": "timestamp"},
+      cancelled_at: {"type": "timestamp"},
+      cancel_reason: {"type": "string"},
+      created_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+      updated_at: {"default": {"fn": "now"}, "required": true, "type": "timestamp"},
+    },
+    unique: [
+      {"cols": [{"col": "id"}], "name": "staff_requests_pkey", "primary": true},
+    ],
+    fks: [
+      {"cols": ["tenant_id"], "onDelete": "cascade", "ref": "tenants", "refCols": ["id"]},
+      {"cols": ["tenant_id", "requester_membership_id"], "onDelete": "cascade", "ref": "memberships", "refCols": ["tenant_id", "id"]},
+    ],
+    indexes: [
+      {"cols": [{"col": "tenant_id"}, {"col": "requester_membership_id"}, {"col": "created_at", "desc": true}], "name": "staff_requests_by_requester"},
+      {"cols": [{"col": "tenant_id"}, {"col": "employee_id"}, {"col": "kind"}, {"col": "status"}, {"col": "start_date"}], "name": "staff_requests_by_employee_day"},
+    ],
     checks: [],
   },
 };

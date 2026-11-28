@@ -16,14 +16,16 @@ import { NotificationService } from '../../platform/notify/notification.service'
  *  - manager / skip_level_manager: the employee's manager, or their manager's manager;
  *  - role: anyone on that access level whose access covers the record;
  *  - hr_workspace: the admins of one HR Workspace (hrWorkspaceId), or the company's HR team (null);
- *  - super_workspace: one named Super Workspace administrator, or any of them.
+ *  - super_workspace: one named Super Workspace administrator, or any of them;
+ *  - person: one named person the requester looped in (Requests section), whatever their level.
  */
 export type StepDef =
   | { type: 'manager'; stage?: number }
   | { type: 'skip_level_manager'; stage?: number }
   | { type: 'role'; role: string; stage?: number }
   | { type: 'hr_workspace'; hrWorkspaceId: string | null; stage?: number }
-  | { type: 'super_workspace'; membershipId?: string | null; stage?: number };
+  | { type: 'super_workspace'; membershipId?: string | null; stage?: number }
+  | { type: 'person'; membershipId: string; stage?: number };
 
 export interface ApprovalRequestRow {
   id: string;
@@ -77,6 +79,10 @@ export interface ApprovalHandler {
   quiet?: boolean;
   /** The module sets the chain of each request itself (leave: on each leave type), so the shared chain editor is closed. */
   chainSetByModule?: string;
+  /** A rejection must say why (Requests: the requester reads the reason). */
+  rejectNeedsReason?: boolean;
+  /** The title of the "waiting for your approval" notice, when the module words it itself. */
+  approverTitle?: (req: ApprovalRequestRow & { meta?: ApprovalMeta | null }) => string;
 }
 
 interface StepRow {
@@ -94,6 +100,7 @@ interface StepRow {
 
 const stageOf = (st: Pick<StepRow, 'seq' | 'stage'>) => st.stage ?? st.seq;
 const authorityOf = (kind: string, role: string | null): 'manager' | 'hr' | 'super' | 'other' =>
+  kind === 'person' ? 'other' :
   kind === 'manager' || kind === 'skip_level_manager' ? 'manager'
     : kind === 'hr_workspace' || (role && levelRoleKeyFor(role) === 'hr_workspace') ? 'hr'
       : kind === 'super_workspace' || (role && levelRoleKeyFor(role) === 'super_workspace') ? 'super' : 'other';
@@ -132,7 +139,7 @@ export class ApprovalsService {
   }
 
   /** Starts an approval in the caller's transaction and notifies the first approver(s). */
-  async start(tx: TenantTx, input: { resourceType: string; resourceId: string; subjectEmployeeId: string | null; summary: string; steps?: StepDef[]; meta?: ApprovalMeta }): Promise<string> {
+  async start(tx: TenantTx, input: { resourceType: string; resourceId: string; subjectEmployeeId: string | null; summary: string; steps?: StepDef[]; meta?: ApprovalMeta; emailApprovers?: boolean }): Promise<string> {
     const h = this.handler(input.resourceType);
     const actor = requestContext.tenantActor();
     // A caller can set the chain for one request (a workflow's approval step names its own approver; leave its type's rules).
@@ -164,6 +171,11 @@ export class ApprovalsService {
         const named = d.membershipId && d.membershipId !== requester && d.membershipId !== subject.membership_id
           && (await tx.collection('memberships').exists({ id: d.membershipId, status: 'active' })) ? d.membershipId : null;
         resolved.push({ kind: 'super_workspace', membershipId: named, role: 'super_workspace', hrWorkspaceId: null, stage });
+      } else if (d.type === 'person') {
+        // A looped person counts while their login is active and they are not the one asking (or the one it is about).
+        if (d.membershipId !== requester && d.membershipId !== subject.membership_id && (await tx.collection('memberships').exists({ id: d.membershipId, status: 'active' }))) {
+          resolved.push({ kind: 'person', membershipId: d.membershipId, role: null, hrWorkspaceId: null, stage });
+        }
       } else {
         const person = d.type === 'manager' ? manager : await managerOf(manager?.manager_id ?? null);
         // Unresolvable or self-approval steps are dropped; the fallback below guarantees someone else decides.
@@ -194,7 +206,7 @@ export class ApprovalsService {
     );
     if (h.autoApproveSoleOwner && (await this.autoApprove(tx, req.id, requester))) return req.id;
     await this.notifications.signal(tx, [requester], 'approvals.changed');
-    const approvers = await this.notifyApprovers(tx, req.id);
+    const approvers = await this.notifyApprovers(tx, req.id, undefined, input.emailApprovers ?? true);
     // The person asking hears straight away that it went for approval, and to whom, so a request is never sent
     // into silence. When they cannot see it themselves (an offer, say), nobody is told here.
     const tellRequester = subject.membership_id ?? (input.subjectEmployeeId ? null : requester);
@@ -375,17 +387,17 @@ export class ApprovalsService {
     return out;
   }
 
-  private async notifyApprovers(tx: TenantTx, requestId: string, only?: Set<string>): Promise<string[]> {
-    const req = (await tx.collection<ApprovalRequestRow>('approval_requests').findOne({ id: requestId }))!;
+  private async notifyApprovers(tx: TenantTx, requestId: string, only?: Set<string>, email = true): Promise<string[]> {
+    const req = (await tx.collection<ApprovalRequestRow & { meta?: ApprovalMeta | null }>('approval_requests').findOne({ id: requestId }))!;
     const h = this.handler(req.resource_type);
     const approvers = (await this.currentApprovers(tx, requestId)).filter((m) => !only || only.has(m));
     await this.notifications.notify(tx, {
       membershipIds: approvers,
       kind: 'approval.requested',
-      title: `You have a new request awaiting your approval: ${h.label.toLowerCase()}`,
+      title: h.approverTitle?.(req) ?? `You have a new request awaiting your approval: ${h.label.toLowerCase()}`,
       body: req.summary,
       link: `/approvals/${requestId}`,
-      email: true,
+      email,
       priority: 'high',
       actorMembershipId: req.requested_by_membership_id,
       resource: { type: 'approval_request', id: requestId },
@@ -425,6 +437,7 @@ export class ApprovalsService {
         throw Errors.forbidden('You cannot approve your own request');
       }
       if (req.status !== 'pending') throw Errors.conflict('invalid_state', `This request is already ${req.status}`);
+      if (decision === 'reject' && h.rejectNeedsReason && !(comment ?? '').trim()) throw Errors.badRequest('reason_required', 'Write the reason for rejecting, so the person knows why.');
       const mine = (await this.pendingApprovers(tx, requestId)).find((x) => x.approvers.includes(actor.membershipId));
       if (!mine) throw Errors.notFound('Approval');
       const step = mine.step;
@@ -432,9 +445,12 @@ export class ApprovalsService {
       // Workspace, a named Super Workspace administrator, escalation and a module's own decider reach beyond the record's
       // usual scope.
       const beyondScope = (step.kind === 'hr_workspace' && step.approver_hr_workspace_id) || step.kind === 'super_workspace' || step.escalated_at;
-      if (h.decider || beyondScope) await this.authz.require(h.permission, undefined, tx);
+      // A person the requester looped in by name decides as that person: being named is the authority (Requests).
+      const named = step.kind === 'person' && step.approver_membership_id === actor.membershipId && !step.escalated_at;
+      if (named) { /* no permission over the record needed */ }
+      else if (h.decider || beyondScope) await this.authz.require(h.permission, undefined, tx);
       else await this.authz.require(h.permission, await h.attributes(tx, req.resource_id), tx);
-      if (decision === 'reject' && h.rejectPermission) {
+      if (decision === 'reject' && h.rejectPermission && !named) {
         if (h.decider || beyondScope) await this.authz.require(h.rejectPermission, undefined, tx);
         else await this.authz.require(h.rejectPermission, await h.attributes(tx, req.resource_id), tx);
       }
@@ -489,10 +505,12 @@ export class ApprovalsService {
         if (asker && !next.includes(asker)) {
           const who = (await this.waitingOn(tx, [requestId])).get(requestId);
           const labels = { manager: 'Manager', hr: 'HR Workspace', super: 'Super Workspace', other: 'Step' } as const;
-          const label = labels[(step.authority ?? authorityOf(step.kind, step.approver_role_key)) as keyof typeof labels] ?? 'Step';
+          const label = step.kind === 'person'
+            ? (await membershipUserNames(tx, [actor.membershipId])).get(actor.membershipId) ?? 'An approver'
+            : labels[(step.authority ?? authorityOf(step.kind, step.approver_role_key)) as keyof typeof labels] ?? 'Step';
           await this.notifications.notify(tx, {
             membershipIds: [asker], kind: 'approval.progressed', title: `${h.label}: ${label} approved`,
-            body: `${await this.stageMessage(tx, requestId, who)}\n${req.summary}`, link: h.link(req.resource_id), actorMembershipId: actor.membershipId,
+            body: `${await this.stageMessage(tx, requestId, who)}\n${req.summary}${comment ? `\nComment: ${comment}` : ''}`, link: h.link(req.resource_id), actorMembershipId: actor.membershipId,
             resource: { type: req.resource_type, id: req.resource_id },
           });
         }

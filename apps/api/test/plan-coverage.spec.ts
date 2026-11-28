@@ -22,6 +22,7 @@ const FOUNDATION: Record<string, string> = {
   FormsController: 'Form management (issue #91): the fields of every form, set up by the Super Workspace; custom fields on a module record check that module in CustomFieldsService',
   MeController: 'The signed-in person, their sessions, password and two-step verification',
   PasswordResetsController: 'Super Workspace record of forgot-password resets, a security baseline like the audit trail',
+  RequestsController: 'Requests (work from home, early leave, late coming ...) are raised by anyone and decided in Approvals; a leave application made from one goes through the leave module and its plan check',
   ApprovalsController: 'One inbox for approvals raised by the modules; each item is created by a gated module',
   AuditController: 'Viewing and verifying the audit trail is a security baseline (the CSV export is the audit_export module)',
   BillingController: 'Plan & billing: where an admin buys or changes the subscription',

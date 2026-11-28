@@ -238,7 +238,7 @@ async function download(p, button) {
     await see(op, 'My attendance');
     await absent(op, 'Attendance dashboard');
     await absent(op, 'Employee Workspace Attendance');
-    if (await op.getByRole('link', { name: 'Team attendance' }).count()) throw new Error('Employee Workspace sees Team attendance');
+    if (await op.locator('nav[aria-label="Main"] a[href="/attendance/team"]').count()) throw new Error('Employee Workspace sees Team attendance');
     await save(op, '10-employee-attendance');
     await op.goto(BASE + '/attendance/employees');
     await op.waitForURL((u) => u.pathname === '/attendance', { timeout: 15000 }).catch((e) => fail(op, e));

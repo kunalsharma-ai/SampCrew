@@ -141,6 +141,30 @@ export const WEB_HELP: HelpContent = {
       how: 'Pick a view, then a card to see its requests. Approve or reject with remarks; open a request for its full history.',
       where: 'For everyone: managers and HR decide here, and everyone follows their own requests here.',
     },
+    '/requests': {
+      title: 'Requests',
+      what: 'Raise a request for work from home, early leave, late coming, comp off, leave and more, and follow each one with every approver’s decision and comment.',
+      how: 'Pick a type, give the dates, times and reason, and loop in your HR, reporting manager or anyone else. Each of them gets it in Approvals.',
+      where: 'At every level: Super Workspace, HR Workspace and Employee Workspace.',
+    },
+    '/requests/new': {
+      title: 'Raise a request',
+      what: 'The request form: type, dates and times, reason and the people you loop in to approve it.',
+      how: 'Everyone you loop in must approve. At least one must be your reporting manager, your HR or the Super Workspace.',
+      where: 'Open it from Requests, or from a request type card.',
+    },
+    '/requests/[id]': {
+      title: 'Request',
+      what: 'One request: what you asked for, when, why, and how each looped person decided, with their comments.',
+      how: 'Cancel it while it is pending. When a leave request is approved, press Apply for leave: the form is filled in for you.',
+      where: 'Open it from Requests, Approvals or a notification.',
+    },
+    '/requests/[id]/apply': {
+      title: 'Leave application form',
+      what: 'The formal leave application, filled in with your employee code, name, designation, reporting manager, HR, the approved days and reason.',
+      how: 'Choose the leave type, check the days and reason, and send. It goes to the same approvers in Approvals and by email, and is saved.',
+      where: 'Open it from an approved leave or half-day request.',
+    },
     '/approvals/[id]': {
       title: 'Approval request',
       what: 'One request: its ID, type, details, supporting documents, current status, who decides it and every step with remarks.',

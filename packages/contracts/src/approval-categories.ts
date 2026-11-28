@@ -59,6 +59,11 @@ export const BUILT_IN_APPROVAL_CATEGORIES: ApprovalCategoryDef[] = [
   { key: 'document_verification', label: 'Document verification', description: 'Documents waiting to be verified', icon: 'file-text', color: '#be123c', rule: { resourceTypes: ['document_verification', 'document_request'] }, builtIn: true },
   { key: 'recruitment', label: 'Recruitment', description: 'Job requisitions and offers', icon: 'briefcase', color: '#0f766e', rule: { resourceTypes: ['job_requisition', 'offer', 'staffing_bid'] }, builtIn: true },
   { key: 'payroll', label: 'Payroll', description: 'Payroll runs', icon: 'wallet', color: '#15803d', rule: { resourceTypes: ['payroll_run'] }, builtIn: true },
+  // Requests (28 November 2026): raised from the Requests section and sent to the people the requester looped in.
+  { key: 'request_wfh', label: 'Work from home requests', description: 'Work-from-home requests raised in Requests', icon: 'home', color: '#7c3aed', rule: { resourceTypes: ['staff_request'], tags: ['wfh'] }, builtIn: true },
+  { key: 'request_time', label: 'Early leave & late coming', description: 'Early leave, late coming and shift change requests', icon: 'alarm-clock', color: '#d97706', rule: { resourceTypes: ['staff_request'], tags: ['early_leave', 'late_coming', 'shift_change'] }, builtIn: true },
+  { key: 'request_leave', label: 'Leave & comp off requests', description: 'Leave, half-day and comp-off requests asked before applying', icon: 'calendar', color: '#2563eb', rule: { resourceTypes: ['staff_request'], tags: ['leave', 'half_day', 'comp_off'] }, builtIn: true },
+  { key: 'requests', label: 'Other requests', description: 'On duty, client visits and other requests raised in Requests', icon: 'inbox', color: '#4f46e5', rule: { resourceTypes: ['staff_request'] }, builtIn: true },
   { key: 'other', label: 'Other HR requests', description: 'Workflow approvals and anything else', icon: 'inbox', color: '#475569', rule: { resourceTypes: [] }, builtIn: true },
 ];
 
